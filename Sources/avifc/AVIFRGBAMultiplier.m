@@ -16,7 +16,7 @@
     if (!newBytes) {
         return nil;
     }
-    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:newBytes length:width*height*4 deallocator:^(void * _Nonnull bytes, NSUInteger length) {
+    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:newBytes length:width*height*depth/2 deallocator:^(void * _Nonnull bytes, NSUInteger length) {
         free(bytes);
     }];
     return returningData;
@@ -80,7 +80,7 @@
     if (!unpremultipliedBytes) {
         return nil;
     }
-    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:unpremultipliedBytes length:width*height*4 deallocator:^(void * _Nonnull bytes, NSUInteger length) {
+    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:unpremultipliedBytes length:width*height*depth/2 deallocator:^(void * _Nonnull bytes, NSUInteger length) {
         free(bytes);
     }];
     return returningData;
