@@ -1,0 +1,4 @@
+module libavif {
+    header "avif/avif.h"
+    export *
+}

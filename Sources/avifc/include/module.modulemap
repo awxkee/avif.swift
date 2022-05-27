@@ -1,0 +1,7 @@
+module avifc {
+    header "AVIFAnimatedEncoder.h"
+    header "AVIFDataDecoder.h"
+    header "AVIFEncoding.h"
+    header "PlatformImage.h"
+    export *
+}

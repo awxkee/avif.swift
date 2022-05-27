@@ -1,0 +1,32 @@
+{
+  "pins" : [
+    {
+      "identity" : "libdav1d.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libdav1d.swift.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "c45010decd50b8de7afee60ac1b639095f3bfb71"
+      }
+    },
+    {
+      "identity" : "libsvtav1enc.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libsvtav1enc.swift.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "b3826b791f1f5a13d5e98947b17dbe67c8c17ac0"
+      }
+    },
+    {
+      "identity" : "libyuv.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libyuv.swift.git",
+      "state" : {
+        "branch" : "master",
+        "revision" : "dc6816ad6cf3c200b069b8e9255bdf5989d6fa64"
+      }
+    }
+  ],
+  "version" : 2
+}
