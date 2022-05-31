@@ -30,20 +30,17 @@ public class AVIFImageDecoder {
     }
     
     public func decode(_ data: Data, sampleSize: CGSize = .zero) -> PlatformImage? {
-        guard data.isAVIFFormat else { return nil }
         let iStream = InputStream(data: data)
         guard let image = try? decoder.decode(iStream, sampleSize: sampleSize, maxContentSize: 0) else { return nil }
         return image
     }
 
     public func decodePartiallyDownloadedData(_ data: Data) -> PlatformImage? {
-        guard data.isAVIFFormat else { return nil }
         guard let image = decoder.incrementallyDecode(data) else { return nil }
         return image
     }
     
     public func readSize(_ data: Data) throws -> CGSize {
-        guard data.isAVIFFormat else { throw AVIFReadError() }
         let value = try decoder.readSize(data)
         return value.cgSizeValue
     }
