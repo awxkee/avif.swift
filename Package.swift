@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "avif",
+    platforms: [.iOS(.v14), .macOS(.v12), .macCatalyst(.v14)],
     products: [
         .library(
             name: "avif",

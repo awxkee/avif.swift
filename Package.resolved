@@ -6,7 +6,7 @@
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
         "branch" : "master",
-        "revision" : "c45010decd50b8de7afee60ac1b639095f3bfb71"
+        "revision" : "9a736fd7835baa90d1f57dbc53d28f4570ef1f81"
       }
     },
     {
@@ -15,7 +15,7 @@
       "location" : "https://github.com/awxkee/libsvtav1enc.swift.git",
       "state" : {
         "branch" : "master",
-        "revision" : "b3826b791f1f5a13d5e98947b17dbe67c8c17ac0"
+        "revision" : "a9302447a39599e31bff66a6f998d22d41cf3e94"
       }
     },
     {
@@ -24,7 +24,7 @@
       "location" : "https://github.com/awxkee/libyuv.swift.git",
       "state" : {
         "branch" : "master",
-        "revision" : "dc6816ad6cf3c200b069b8e9255bdf5989d6fa64"
+        "revision" : "27a7157a956b5d95f07d8b2b29d61c5fcd8c4f4d"
       }
     }
   ],
