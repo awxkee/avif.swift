@@ -70,7 +70,7 @@ static void AVCGDataProviderReleaseDataCallback(void *info, const void *data, si
         return NULL;
     }
     
-    CGImageRef image = CGImageCreate(newWidth, newHeight, 32*depth / 8, depth, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
+    CGImageRef image = CGImageCreate(newWidth, newHeight, depth, 32*depth / 8, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
 
     CFRelease(provider);
     CGColorSpaceRelease(colorSpace);
