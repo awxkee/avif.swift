@@ -10,10 +10,6 @@
 #import <Accelerate/Accelerate.h>
 #import "AVIFRGBAMultiplier.h"
 
-static void AVCGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
-    if (info) free(info);
-}
-
 @implementation AVIFAnimatedDecoder {
     avifDecoder *_idec;
 }

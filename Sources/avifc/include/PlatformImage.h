@@ -15,6 +15,10 @@
 #define Image   UIImage
 #endif
 
+static void AVCGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
+    if (info) free(info);
+}
+
 @interface Image (ColorData)
 - (unsigned char *)rgbaPixels;
 @end

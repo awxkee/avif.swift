@@ -238,12 +238,13 @@
     
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
-    CGContextRef gtx = CGBitmapContextCreate(premultiplied, newWidth, newHeight, depth, newRowBytes, colorSpace, flags);
-    if (gtx == NULL) {
-        *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Unsupported image on iOS" }];
-        return nil;
+    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AVCGDataProviderReleaseDataCallback);
+    if (!provider) {
+        free(premultiplied);
+        return NULL;
     }
-    CGImageRef imageRef = CGBitmapContextCreateImage(gtx);
+    
+    CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, 32*depth / 8, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
     Image *image = nil;
 #if AVIF_PLUGIN_MAC
     image = [[NSImage alloc] initWithCGImage:imageRef size:CGSizeZero];
@@ -251,8 +252,8 @@
     image = [UIImage imageWithCGImage:imageRef scale:scale orientation:UIImageOrientationUp];
 #endif
 
-    CGImageRelease(imageRef);
     CGColorSpaceRelease(colorSpace);
+    CFRelease(provider);
     return image;
 }
 
