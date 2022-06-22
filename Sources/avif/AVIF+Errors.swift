@@ -9,3 +9,4 @@ import Foundation
 
 public struct AVIFReadError: Error, Equatable { }
 public struct OpenStreamError: Error, Equatable { }
+public struct AVIFDecodingError: Error, Equatable { }

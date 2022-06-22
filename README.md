@@ -16,11 +16,13 @@ let uiImage: UIImage? = AVIFImageDecoder().decode(Data(), sampleSize: .zero) // 
 let data: Data = try AVIFEncoder().encode(image: UIImage())
 
 // Decode animated
-let animatedDecoder = AVIFAnimatedDecoder(withData: Data())
-let frame: CGImage = animatedDecoder.get(frame: 1)
-let image: UIImage = animatedDecoder.getImage(frame: 1) 
+let animatedDecoder = AnimatedDecoder(withData: Data())
+let frame: CGImage = try animatedDecoder.get(frame: 1)
+let image: UIImage = try animatedDecoder.getImage(frame: 1) 
 
 // Encode animation
+import avifc
+
 let animatedEncoder = AVIFAnimatedEncoder()
 animatedEncoder.create()
 try animatedEncoder.addImage(UIImage(), duration: 250)
