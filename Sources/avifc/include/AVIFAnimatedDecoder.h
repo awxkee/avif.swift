@@ -10,7 +10,7 @@
 
 @interface AVIFAnimatedDecoder : NSObject
 -(nullable id)initWithData:(nonnull NSData*)data;
--(nullable Image*)getImage:(int)frame;
+-(nullable CGImageRef)getImage:(int)frame;
 -(int)framesCount;
 -(int)frameDuration:(int)frame;
 -(CGSize)imageSize;

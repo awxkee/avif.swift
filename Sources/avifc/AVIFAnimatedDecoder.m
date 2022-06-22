@@ -10,6 +10,10 @@
 #import <Accelerate/Accelerate.h>
 #import "AVIFRGBAMultiplier.h"
 
+static void AVCGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
+    if (info) free(info);
+}
+
 @implementation AVIFAnimatedDecoder {
     avifDecoder *_idec;
 }
@@ -31,7 +35,7 @@
     return self;
 }
 
--(nullable Image*)getImage:(int)frame {
+-(nullable CGImageRef)getImage:(int)frame {
     avifResult nextImageResult = avifDecoderNthImage(_idec, frame);
     if (nextImageResult != AVIF_RESULT_OK) {
         return nil;
@@ -59,19 +63,16 @@
     
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
-    CGContextRef gtx = CGBitmapContextCreate(premultiplied, newWidth, newHeight, depth, newRowBytes, colorSpace, flags);
-    if (gtx == NULL) {
-        return nil;
+    
+    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AVCGDataProviderReleaseDataCallback);
+    if (!provider) {
+        free(premultiplied);
+        return NULL;
     }
-    CGImageRef imageRef = CGBitmapContextCreateImage(gtx);
-    Image *image = nil;
-#if AVIF_PLUGIN_MAC
-    image = [[NSImage alloc] initWithCGImage:imageRef size:CGSizeZero];
-#else
-    image = [UIImage imageWithCGImage:imageRef scale:1 orientation:UIImageOrientationUp];
-#endif
+    
+    CGImageRef image = CGImageCreate(newWidth, newHeight, 32*depth / 8, depth, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
 
-    CGImageRelease(imageRef);
+    CFRelease(provider);
     CGColorSpaceRelease(colorSpace);
     return image;
 }
