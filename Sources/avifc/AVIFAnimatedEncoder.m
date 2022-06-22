@@ -19,7 +19,7 @@
 - (void)create {
     encoder = avifEncoderCreate();
     encoder->maxThreads = 6;
-    encoder->timescale = 60;
+    encoder->timescale = 1000;
 }
 
 - (void* _Nullable)addImage:(Image * _Nonnull)platformImage duration:(NSUInteger)duration error:(NSError * _Nullable * _Nullable)error {
@@ -43,7 +43,7 @@
         return nil;
     }
     
-    avifResult addImageResult = avifEncoderAddImage(encoder, image, (int)round(1000.0f / 60.0f * (float)duration), AVIF_ADD_IMAGE_FLAG_NONE);
+    avifResult addImageResult = avifEncoderAddImage(encoder, image, (int)round(1000.0f * (float)duration), AVIF_ADD_IMAGE_FLAG_NONE);
     if (addImageResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgb);
         avifImageDestroy(image);
