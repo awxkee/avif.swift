@@ -31,7 +31,19 @@
     return self;
 }
 
--(nullable CGImageRef)getImage:(int)frame {
+-(nullable UIImage*)getImage:(int)frame {
+    CGImageRef ref = [self get:frame];
+    if (!ref) return NULL;
+    Image *image = nil;
+#if AVIF_PLUGIN_MAC
+    image = [[NSImage alloc] initWithCGImage:ref size:CGSizeZero];
+#else
+    image = [UIImage imageWithCGImage:ref scale:1 orientation:UIImageOrientationUp];
+#endif
+    return image;
+}
+
+-(nullable CGImageRef)get:(int)frame {
     avifResult nextImageResult = avifDecoderNthImage(_idec, frame);
     if (nextImageResult != AVIF_RESULT_OK) {
         return nil;
