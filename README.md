@@ -11,6 +11,16 @@ Also supports encoding animated AVIF's
 
 Precompiled for iOS 14+, Mac OS 12+, Mac Catalyst 14+
 
+## Installation
+
+### [Swift Package Manager](https://swift.org/package-manager/)
+
+Go to `File / Swift Packages / Add Package Dependency…`
+and enter package repository URL https://github.com/awxkee/avif.swift.git, then select the latest master branch
+at the time of writing.
+
+## Usage
+
 ```swift
 // Decompress data
 let uiImage: UIImage? = AVIFDecoder().decode(Data(), sampleSize: .zero) // or any max CGSize of image
@@ -38,6 +48,10 @@ If you wish to use `AVIF` with <a href="https://github.com/kean/Nuke" target="_b
 import avifnuke
 
 AVIFNukePlugin.enable()
+
+let imageView = UIImageView()
+let avifimageURL = URL(string: "https://bestavifdomain.com/sample.avif")!
+Nuke.loadImage(with: url, into: imageView)
 ```
 
 Currently, avif nuke plugin do not support animated avifs so you have to do it yourself
