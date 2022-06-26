@@ -20,7 +20,7 @@ import AppKit.NSImage
 public typealias PlatformImage = NSImage
 #endif
 
-public class AVIFImageDecoder {
+public class AVIFDecoder {
 
     private lazy var decoder: AVIFDataDecoder = AVIFDataDecoder()
     

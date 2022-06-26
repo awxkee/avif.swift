@@ -9,9 +9,11 @@ Library uses precompiled `svt-av1` and `dav1d` to ensure in fast encoding/decodi
 Supports animated AVIF's with realtime FPS like 24+
 Also supports encoding animated AVIF's
 
+Precompiled for iOS 14+, Mac OS 12+, Mac Catalyst 14+
+
 ```swift
 // Decompress data
-let uiImage: UIImage? = AVIFImageDecoder().decode(Data(), sampleSize: .zero) // or any max CGSize of image
+let uiImage: UIImage? = AVIFDecoder().decode(Data(), sampleSize: .zero) // or any max CGSize of image
 // Compress
 let data: Data = try AVIFEncoder().encode(image: UIImage())
 
@@ -28,6 +30,17 @@ animatedEncoder.create()
 try animatedEncoder.addImage(UIImage(), duration: 250)
 let encodedData = animatedEncoder.encode()
 ```
+
+## Nuke Plugin
+If you wish to use `AVIF` with <a href="https://github.com/kean/Nuke" target="_blank">`Nuke`</a> you may add `avifnuke` library to project and activate the plugin on app init
+
+```swift
+import avifnuke
+
+AVIFNukePlugin.enable()
+```
+
+Currently, avif nuke plugin do not support animated avifs so you have to do it yourself
 
 ## TODO
 - [ ] Tests

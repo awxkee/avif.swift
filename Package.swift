@@ -10,13 +10,20 @@ let package = Package(
         .library(
             name: "avif",
             targets: ["avif"]),
+        .library(
+            name: "avifnuke",
+            targets: ["avifnuke"]),
     ],
     dependencies: [
         .package(url: "https://github.com/awxkee/libsvtav1enc.swift.git", branch: "master"),
         .package(url: "https://github.com/awxkee/libdav1d.swift.git", branch: "master"),
-        .package(url: "https://github.com/awxkee/libyuv.swift.git", branch: "master")
+        .package(url: "https://github.com/awxkee/libyuv.swift.git", branch: "master"),
+        .package(url: "https://github.com/kean/Nuke.git", from: "10.0.0")
     ],
     targets: [
+        .target(
+            name: "avifnuke",
+            dependencies: ["avif", .product(name: "Nuke", package: "Nuke"), "avifc"]),
         .target(
             name: "avif",
             dependencies: ["avifc"]),

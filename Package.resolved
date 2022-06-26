@@ -26,6 +26,15 @@
         "branch" : "master",
         "revision" : "27a7157a956b5d95f07d8b2b29d61c5fcd8c4f4d"
       }
+    },
+    {
+      "identity" : "nuke",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kean/Nuke.git",
+      "state" : {
+        "revision" : "a002b7fd786f2df2ed4333fe73a9727499fd9d97",
+        "version" : "10.11.2"
+      }
     }
   ],
   "version" : 2
