@@ -206,7 +206,7 @@
             resizeFactor = sampleSize.height / (float)decoder->image->width;
         }
         
-        if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor, (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT, &decoder->diag)) {
+        if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor, (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT, (uint32_t) maxContentSize, &decoder->diag)) {
             avifDecoderDestroy(decoder);
             return nil;
         }

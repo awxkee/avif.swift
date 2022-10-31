@@ -7,23 +7,29 @@
 
 import Foundation
 import Nuke
-import avif
+@preconcurrency import avif
 
-public class AVIFNukePlugin: Nuke.ImageDecoding {
+public final class AVIFNukePlugin: Nuke.ImageDecoding {
 
     private let decoder = AVIFDecoder()
 
     public init() {
     }
     
-    public func decode(_ data: Data) -> ImageContainer? {
-        guard data.isAVIFFormat else { return nil }
-        guard let image = decoder.decode(data) else { return nil }
+    public func decode(_ data: Data) throws -> ImageContainer {
+        guard data.isAVIFFormat else { throw AVIFNukePluginDecodeError() }
+        guard let image = decoder.decode(data) else { throw AVIFNukePluginDecodeError() }
         return ImageContainer(image: image)
     }
 
     public func decodePartiallyDownloadedData(_ data: Data) -> ImageContainer? {
         return nil
+    }
+
+    public struct AVIFNukePluginDecodeError: LocalizedError {
+        public var errorDescription: String? {
+            "AVIF doesn't seems to be valid"
+        }
     }
 
 }
