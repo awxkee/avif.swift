@@ -121,8 +121,11 @@
     CGSize size = CGSizeMake(decoder->image->width, decoder->image->height);
     
     avifDecoderDestroy(decoder);
-    
+#if TARGET_OS_OSX
+    return [NSValue valueWithSize:size];
+#else
     return [NSValue valueWithCGSize:size];
+#endif
 }
 
 - (nullable NSValue*)readSizeFromPath:(nonnull NSString*)path error:(NSError *_Nullable * _Nullable)error {
@@ -143,12 +146,16 @@
     
     avifDecoderDestroy(decoder);
     
+#if TARGET_OS_OSX
+    return [NSValue valueWithSize:size];
+#else
     return [NSValue valueWithCGSize:size];
+#endif
 }
 
 - (nullable Image *)decode:(nonnull NSInputStream *)inputStream sampleSize:(CGSize)sampleSize maxContentSize:(NSUInteger)maxContentSize error:(NSError *_Nullable * _Nullable)error {
     NSInteger result;
-    int bufferLength = 4096;
+    int bufferLength = 30196;
     uint8_t buffer[bufferLength];
     NSMutableData* data = [[NSMutableData alloc] init];
     [inputStream open];

@@ -42,19 +42,27 @@ public final class AVIFDecoder {
     
     public func readSize(_ data: Data) throws -> CGSize {
         let value = try decoder.readSize(data)
+#if os(macOS)
+        return value.sizeValue
+#else
         return value.cgSizeValue
+#endif
     }
     
     public func readSize(path: String) throws -> CGSize {
         let value = try decoder.readSize(fromPath: path)
+#if os(macOS)
+        return value.sizeValue
+#else
         return value.cgSizeValue
+#endif
     }
     
     public func readSize(at: URL) throws -> CGSize {
         return try readSize(path: at.path)
     }
     
-    public func decode(at: URL, sampleSize: CGSize) throws -> PlatformImage {
+    public func decode(at: URL, sampleSize: CGSize = .zero) throws -> PlatformImage {
         guard let iStream = InputStream(url: at) else {
             throw OpenStreamError()
         }

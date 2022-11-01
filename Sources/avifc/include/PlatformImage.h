@@ -7,7 +7,9 @@
 #ifndef PlatformImage_h
 #define PlatformImage_h
 
-#if AVIF_PLUGIN_MAC
+#import "TargetConditionals.h"
+
+#if TARGET_OS_OSX
 #import <AppKit/AppKit.h>
 #define Image   NSImage
 #else

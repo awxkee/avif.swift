@@ -24,8 +24,13 @@
 
 - (void* _Nullable)addImage:(Image * _Nonnull)platformImage duration:(NSUInteger)duration error:(NSError * _Nullable * _Nullable)error {
     unsigned char * rgba = [platformImage rgbaPixels];
+#if TARGET_OS_OSX
+    int width = [platformImage size].width;
+    int height = [platformImage size].height;
+#else
     int width = [platformImage size].width * [platformImage scale];
     int height = [platformImage size].height * [platformImage scale];
+#endif
     avifRGBImage rgb;
     avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
     avifRGBImageSetDefaults(&rgb, image);

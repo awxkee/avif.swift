@@ -31,7 +31,7 @@ public class AnimatedDecoder {
         return Int(_decoder.frameDuration(Int32(frame)))
     }
     
-    public func getImage(frame: Int) throws -> UIImage {
+    public func getImage(frame: Int) throws -> PlatformImage {
         guard let image = _decoder.getImage(Int32(frame)) else {
             throw AVIFDecodingError()
         }

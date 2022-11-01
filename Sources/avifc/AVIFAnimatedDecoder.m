@@ -9,6 +9,7 @@
 #import "avif/avif.h"
 #import <Accelerate/Accelerate.h>
 #import "AVIFRGBAMultiplier.h"
+#import "PlatformImage.h"
 
 @implementation AVIFAnimatedDecoder {
     avifDecoder *_idec;
@@ -31,11 +32,11 @@
     return self;
 }
 
--(nullable UIImage*)getImage:(int)frame {
+-(nullable Image*)getImage:(int)frame {
     CGImageRef ref = [self get:frame];
     if (!ref) return NULL;
     Image *image = nil;
-#if AVIF_PLUGIN_MAC
+#if TARGET_OS_OSX
     image = [[NSImage alloc] initWithCGImage:ref size:CGSizeZero];
 #else
     image = [UIImage imageWithCGImage:ref scale:1 orientation:UIImageOrientationUp];

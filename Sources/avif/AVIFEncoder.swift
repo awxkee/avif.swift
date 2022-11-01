@@ -7,7 +7,11 @@
 
 import Foundation
 import avifc
+#if !os(macOS)
 import UIKit
+#else
+import AppKit
+#endif
 
 public class AVIFEncoder {
     
@@ -26,6 +30,13 @@ public class AVIFEncoder {
         assert(size.width > 0 && size.height > 0, "You cannot safely scale an image to a zero width or height")
         
         #if os(macOS)
+        let destSize = NSMakeSize(CGFloat(size.width), CGFloat(size.height))
+        let newImage = NSImage(size: destSize)
+        newImage.lockFocus()
+        image.draw(in: NSMakeRect(0, 0, destSize.width, destSize.height), from: NSMakeRect(0, 0, image.size.width, image.size.height), operation: NSCompositingOperation.copy, fraction: CGFloat(1))
+        newImage.unlockFocus()
+        newImage.size = destSize
+        return NSImage(data: newImage.tiffRepresentation!)!
         #else
         UIGraphicsBeginImageContextWithOptions(size, false, scale ?? image.scale)
         image.draw(in: CGRect(origin: .zero, size: size))
