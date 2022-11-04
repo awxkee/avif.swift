@@ -18,7 +18,10 @@
 @implementation AVIFEncoding {
 }
 
-- (nullable NSData *)encodeImage:(nonnull Image *)platformImage speed:(NSInteger)speed quality:(double)quality error:(NSError * _Nullable *_Nullable)error {
+- (nullable NSData *)encodeImage:(nonnull Image *)platformImage
+                           speed:(NSInteger)speed
+                           depth:(NSUInteger)depth
+                           quality:(double)quality error:(NSError * _Nullable *_Nullable)error {
     unsigned char * rgba = [platformImage rgbaPixels];
 #if TARGET_OS_OSX
     int width = [platformImage size].width;
@@ -28,7 +31,7 @@
     int height = [platformImage size].height * [platformImage scale];
 #endif
     avifRGBImage rgb;
-    avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
+    avifImage * image = avifImageCreate(width, height, (uint32_t)depth, AVIF_PIXEL_FORMAT_YUV420);
     avifRGBImageSetDefaults(&rgb, image);
     avifRGBImageAllocatePixels(&rgb);
     memcpy(rgb.pixels, rgba, rgb.rowBytes * image->height);

@@ -8,6 +8,11 @@
 #import "AVIFImageMacros.h"
 #import "AVIFEncoding.h"
 #import "PlatformImage.h"
+#if __has_include(<libavif/avif.h>)
+#import <libavif/avif.h>
+#else
+#import "avif/avif.h"
+#endif
 
 @interface AVIFDataDecoder : NSObject
 

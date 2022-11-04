@@ -17,6 +17,6 @@
 
 @interface AVIFEncoding : NSObject
 
-- (nullable NSData *)encodeImage:(nonnull Image *)platformImage speed:(NSInteger)speed quality:(double)quality error:(NSError * _Nullable *_Nullable)error;
+- (nullable NSData *)encodeImage:(nonnull Image *)platformImage speed:(NSInteger)speed depth:(NSUInteger)depth quality:(double)quality error:(NSError * _Nullable *_Nullable)error;
 
 @end

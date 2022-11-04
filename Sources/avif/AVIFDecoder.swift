@@ -40,6 +40,46 @@ public final class AVIFDecoder {
         return image
     }
     
+    public static func readSize(data: Data) throws -> CGSize {
+        guard let decoder = avifDecoderCreate() else {
+            throw AVIFUnderlyingError(underlyingError: "Can't initialize decoder")
+        }
+        defer { avifDecoderDestroy(decoder) }
+        let result = try data.withUnsafeBytes { pointer in
+            var result = avifDecoderSetIOMemory(decoder, pointer.baseAddress!.assumingMemoryBound(to: UInt8.self), data.count)
+            if result != AVIF_RESULT_OK {
+                throw AVIFUnderlyingError(underlyingError: String(utf8String: avifResultToString(result)) ?? "Unknown error")
+            }
+            decoder.pointee.strictFlags = AVIF_STRICT_DISABLED.rawValue
+            result = avifDecoderParse(decoder)
+            if result != AVIF_RESULT_OK {
+                throw AVIFUnderlyingError(underlyingError: String(utf8String: avifResultToString(result)) ?? "Unknown error")
+            }
+            let size = CGSize(width: CGFloat(decoder.pointee.image.pointee.width), height: CGFloat(decoder.pointee.image.pointee.height))
+            return size
+        }
+        return result
+    }
+
+    public static func readSize(path: String) throws -> CGSize {
+        guard let decoder = avifDecoderCreate() else {
+            throw AVIFUnderlyingError(underlyingError: "Can't initialize decoder")
+        }
+        defer { avifDecoderDestroy(decoder) }
+        var result = avifDecoderSetIOFile(decoder, (path as NSString).fileSystemRepresentation)
+        if result != AVIF_RESULT_OK {
+            throw AVIFUnderlyingError(underlyingError: String(utf8String: avifResultToString(result)) ?? "Unknown error")
+        }
+        decoder.pointee.strictFlags = AVIF_STRICT_DISABLED.rawValue
+        result = avifDecoderParse(decoder)
+        if result != AVIF_RESULT_OK {
+            throw AVIFUnderlyingError(underlyingError: String(utf8String: avifResultToString(result)) ?? "Unknown error")
+        }
+        let size = CGSize(width: CGFloat(decoder.pointee.image.pointee.width), height: CGFloat(decoder.pointee.image.pointee.height))
+        return size
+    }
+
+    @available(*, deprecated, message: "Use static `readSize` instead")
     public func readSize(_ data: Data) throws -> CGSize {
         let value = try decoder.readSize(data)
 #if os(macOS)
@@ -48,7 +88,8 @@ public final class AVIFDecoder {
         return value.cgSizeValue
 #endif
     }
-    
+
+    @available(*, deprecated, message: "Use static `readSize` instead")
     public func readSize(path: String) throws -> CGSize {
         let value = try decoder.readSize(fromPath: path)
 #if os(macOS)
@@ -57,7 +98,8 @@ public final class AVIFDecoder {
         return value.cgSizeValue
 #endif
     }
-    
+
+    @available(*, deprecated, message: "Use static `readSize` instead")
     public func readSize(at: URL) throws -> CGSize {
         return try readSize(path: at.path)
     }

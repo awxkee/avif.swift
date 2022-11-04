@@ -136,7 +136,6 @@
     decoder->strictFlags = AVIF_STRICT_DISABLED;
     avifResult decodeResult = avifDecoderParse(decoder);
     if (decodeResult != AVIF_RESULT_OK) {
-        NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
         avifDecoderDestroy(decoder);
         *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"readSize in AVIF failed with result: %s", avifResultToString(decodeResult)] }];
         return nil;
