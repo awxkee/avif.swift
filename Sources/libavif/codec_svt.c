@@ -191,7 +191,6 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
 
     input_buffer->flags = 0;
     input_buffer->pts = 0;
-    svt_config->film_grain_denoise_apply = 0;
 
     EbAv1PictureType frame_type = EB_AV1_INVALID_PICTURE;
     if (addImageFlags & AVIF_ADD_IMAGE_FLAG_FORCE_KEYFRAME) {
