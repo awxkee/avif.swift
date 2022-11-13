@@ -15,7 +15,7 @@ let package = Package(
             targets: ["avifnuke"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/awxkee/libsvtav1enc.swift.git", exact: "1.0.0"),
+        .package(url: "https://github.com/awxkee/libsvtav1enc.swift.git", "1.0.0"..<"1.1.0"),
         .package(url: "https://github.com/awxkee/libdav1d.swift.git", exact: "1.0.0"),
         .package(url: "https://github.com/awxkee/libyuv.swift.git", exact: "1.0.0"),
         .package(url: "https://github.com/kean/Nuke.git", "11.0.0"..<"12.0.0")
