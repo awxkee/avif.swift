@@ -1,20 +1,20 @@
 {
   "pins" : [
     {
+      "identity" : "libaom.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libaom.swift.git",
+      "state" : {
+        "revision" : "968e44ab7d53a78439caabe4fe0e19e1b5207a1e",
+        "version" : "1.0.1"
+      }
+    },
+    {
       "identity" : "libdav1d.swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
         "revision" : "8aa211087ab4ebf4e85d22a29ca1927fb7cd3f2e",
-        "version" : "1.0.0"
-      }
-    },
-    {
-      "identity" : "libsvtav1enc.swift",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/awxkee/libsvtav1enc.swift.git",
-      "state" : {
-        "revision" : "23c347227235363cbfb225d0b3e8683ee39ddf1f",
         "version" : "1.0.0"
       }
     },

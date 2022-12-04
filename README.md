@@ -4,9 +4,9 @@
 
 avif.swift the package to easy compress `UIImage` to `AVIF` and decompress `AVIF` to `UIImage`
 
-Library uses precompiled `svt-av1` and `dav1d` to ensure in fast encoding/decoding
+Library uses precompiled `libaom` and `dav1d` to ensure in fast encoding/decoding
 </br>
-Main aim of the project is to use `AVIF` image in `iOS` etc with usable speed and convenience, because a lot of libraries that provides just `c` implementation of libavif with `aom` or anything else built in `c` have unusable speed
+Main aim of the project is to use `AVIF` image in `iOS` etc with usable speed and convenience
 
 Supports animated AVIF's with realtime FPS like 24+
 Also supports encoding animated AVIF's
