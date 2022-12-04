@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
-        "revision" : "8aa211087ab4ebf4e85d22a29ca1927fb7cd3f2e",
-        "version" : "1.0.0"
+        "revision" : "44e67528b0ad5e8f8840af727949925826c6162a",
+        "version" : "1.0.2"
       }
     },
     {
