@@ -25,7 +25,7 @@ at the time of writing.
 
 ```swift
 // Decompress data
-let uiImage: UIImage? = AVIFDecoder().decode(Data(), sampleSize: .zero) // or any max CGSize of image
+let uiImage: UIImage? = AVIFDecoder.decode(Data(), sampleSize: .zero) // or any max CGSize of image
 // Compress
 let data: Data = try AVIFEncoder().encode(image: UIImage())
 
