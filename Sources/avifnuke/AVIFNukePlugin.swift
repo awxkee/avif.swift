@@ -11,14 +11,12 @@ import Nuke
 
 public final class AVIFNukePlugin: Nuke.ImageDecoding {
 
-    private let decoder = AVIFDecoder()
-
     public init() {
     }
     
     public func decode(_ data: Data) throws -> ImageContainer {
         guard data.isAVIFFormat else { throw AVIFNukePluginDecodeError() }
-        guard let image = decoder.decode(data) else { throw AVIFNukePluginDecodeError() }
+        guard let image = AVIFDecoder.decode(data) else { throw AVIFNukePluginDecodeError() }
         return ImageContainer(image: image)
     }
 

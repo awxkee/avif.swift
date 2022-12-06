@@ -13,7 +13,7 @@ public extension Data {
 
     var isAVIFFormat: Bool {
         do {
-            let ss = try AVIFDecoder().readSize(self)
+            let ss = try AVIFDecoder.readSize(data: self)
             return ss.width > 0 && ss.height > 0
         } catch {
             return false
