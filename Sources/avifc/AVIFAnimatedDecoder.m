@@ -73,7 +73,7 @@
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
     
-    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AVCGDataProviderReleaseDataCallback);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
         free(premultiplied);
         return NULL;

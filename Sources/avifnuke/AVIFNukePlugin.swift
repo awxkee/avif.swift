@@ -7,7 +7,7 @@
 
 import Foundation
 import Nuke
-@preconcurrency import avif
+import avif
 
 public final class AVIFNukePlugin: Nuke.ImageDecoding {
 

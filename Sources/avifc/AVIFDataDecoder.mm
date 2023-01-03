@@ -14,6 +14,7 @@
 #import <Accelerate/Accelerate.h>
 #import "AVIFDataDecoder.h"
 #import "AVIFRGBAMultiplier.h"
+#import <vector>
 
 @implementation AVIFDataDecoder {
     avifDecoder *_idec;
@@ -24,6 +25,10 @@
         avifDecoderDestroy(_idec);
         _idec = NULL;
     }
+}
+
+void sharedDecoderDeallocator(avifDecoder* d) {
+    avifDecoderDestroy(d);
 }
 
 - (nullable Image *)incrementallyDecodeData:(NSData *)data {
@@ -38,7 +43,7 @@
         
     }
     
-    avifDecoderSetIOMemory(_idec, data.bytes, data.length);
+    avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t *>(data.bytes), data.length);
     avifResult decodeResult = avifDecoderParse(_idec);
     
     if (decodeResult != AVIF_RESULT_OK && decodeResult != AVIF_RESULT_TRUNCATED_DATA) {
@@ -58,6 +63,8 @@
         avifRGBImage rgbImage;
         avifRGBImageSetDefaults(&rgbImage, _idec->image);
         rgbImage.format = AVIF_RGB_FORMAT_RGBA;
+        rgbImage.alphaPremultiplied = true;
+        rgbImage.depth = 8;
         avifRGBImageAllocatePixels(&rgbImage);
         avifResult rgbResult = avifImageYUVToRGB(_idec->image, &rgbImage);
         if (rgbResult != AVIF_RESULT_OK) {
@@ -73,27 +80,28 @@
         int newHeight = rgbImage.height;
         int newRowBytes = rgbImage.rowBytes;
         int depth = rgbImage.depth;
-        void* premultiplied = [AVIFRGBAMultiplier premultiplyBytes:rgbImage.pixels width:rgbImage.width height:rgbImage.height depth:rgbImage.depth];
+        int stride = rgbImage.rowBytes;
+        auto pixelsData = malloc(stride * newHeight);
+        memcpy(pixelsData, rgbImage.pixels, stride * newHeight);
         avifRGBImageFreePixels(&rgbImage);
-        if (!premultiplied) {
-            return nil;
-        }
         
         CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
         int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
-        CGContextRef gtx = CGBitmapContextCreate(premultiplied, newWidth, newHeight, depth, newRowBytes, colorSpace, flags);
-        if (gtx == NULL) {
-            NSLog(@"AVIF Data decoder can't allocate memory");
-            return nil;
+        CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixelsData, stride*newHeight, AV1CGDataProviderReleaseDataCallback);
+        if (!provider) {
+            free(pixelsData);
+            CGColorSpaceRelease(colorSpace);
+            return NULL;
         }
-        CGImageRef imageRef = CGBitmapContextCreateImage(gtx);
+        CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, 32, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
         Image *image = nil;
-    #if AVIF_PLUGIN_MAC
+#if AVIF_PLUGIN_MAC
         image = [[NSImage alloc] initWithCGImage:imageRef size:CGSizeZero];
-    #else
+#else
         image = [UIImage imageWithCGImage:imageRef scale:1 orientation: UIImageOrientationUp];
-    #endif
+#endif
 
+        CFRelease(provider);
         CGImageRelease(imageRef);
         CGColorSpaceRelease(colorSpace);
         return image;
@@ -106,7 +114,7 @@
 
 - (nullable NSValue*)readSize:(nonnull NSData*)data error:(NSError *_Nullable * _Nullable)error {
     avifDecoder * decoder = avifDecoderCreate();
-    avifDecoderSetIOMemory(decoder, data.bytes, data.length);
+    avifDecoderSetIOMemory(decoder, reinterpret_cast<const uint8_t *>(data.bytes), data.length);
     
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
@@ -173,29 +181,26 @@
         }
     }
     [inputStream close];
-    avifDecoder * decoder = avifDecoderCreate();
+    std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
 
-    avifDecoderSetIOMemory(decoder, data.bytes, data.length);
+    avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
     CGFloat scale = 1;
     
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
     decoder->ignoreXMP = true;
     decoder->ignoreExif = true;
-    avifResult decodeResult = avifDecoderParse(decoder);
+    avifResult decodeResult = avifDecoderParse(decoder.get());
     if (decodeResult != AVIF_RESULT_OK) {
         NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
         *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(decodeResult)] }];
-
-        avifDecoderDestroy(decoder);
         return nil;
     }
     // Static image
-    avifResult nextImageResult = avifDecoderNextImage(decoder);
+    avifResult nextImageResult = avifDecoderNextImage(decoder.get());
     if (nextImageResult != AVIF_RESULT_OK) {
         NSLog(@"Failed to decode image: %s", avifResultToString(nextImageResult));
         *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(nextImageResult)] }];
-        avifDecoderDestroy(decoder);
         return nil;
     }
     
@@ -213,7 +218,6 @@
         }
         
         if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor, (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT, (uint32_t) maxContentSize, &decoder->diag)) {
-            avifDecoderDestroy(decoder);
             return nil;
         }
         
@@ -221,11 +225,12 @@
     avifRGBImage rgbImage;
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
     rgbImage.format = AVIF_RGB_FORMAT_RGBA;
+    rgbImage.alphaPremultiplied = true;
+    rgbImage.depth = 8;
     avifRGBImageAllocatePixels(&rgbImage);
     avifResult rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgbImage);
-        avifDecoderDestroy(decoder);
         *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(rgbResult)] }];
         return nil;
     }
@@ -234,23 +239,22 @@
     int newHeight = rgbImage.height;
     int newRowBytes = rgbImage.rowBytes;
     int depth = rgbImage.depth;
-    void* premultiplied = [AVIFRGBAMultiplier premultiplyBytes:rgbImage.pixels width:rgbImage.width height:rgbImage.height depth:rgbImage.depth];
+    int stride = rgbImage.rowBytes;
+    auto pixelsData = malloc(stride * newHeight);
+    memcpy(pixelsData, rgbImage.pixels, stride * newHeight);
     avifRGBImageFreePixels(&rgbImage);
-    avifDecoderDestroy(decoder);
-    if (!premultiplied) {
-        *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Cannot create RGBA Space" }];
-        return nil;
-    }
+    decoder.reset();
     
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
-    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AVCGDataProviderReleaseDataCallback);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixelsData, stride*newHeight, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
-        free(premultiplied);
+        free(pixelsData);
+        CGColorSpaceRelease(colorSpace);
         return NULL;
     }
     
-    CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, 32*depth / 8, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
+    CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, 32, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
     Image *image = nil;
 #if AVIF_PLUGIN_MAC
     image = [[NSImage alloc] initWithCGImage:imageRef size:CGSizeZero];
@@ -260,6 +264,7 @@
 
     CGColorSpaceRelease(colorSpace);
     CFRelease(provider);
+    CGImageRelease(imageRef);
     return image;
 }
 

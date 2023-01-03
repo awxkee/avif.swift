@@ -17,8 +17,8 @@
 #define Image   UIImage
 #endif
 
-static void AVCGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
-    if (info) free(info);
+static void AV1CGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
+    if (data) free((void*)data);
 }
 
 @interface Image (ColorData)
