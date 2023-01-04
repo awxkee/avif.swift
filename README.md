@@ -2,7 +2,7 @@
 
 ## What's This?
 
-avif.swift the package to easy compress `UIImage` to `AVIF` and decompress `AVIF` to `UIImage`
+A package to display AVIF on iOS and MacOS or encode AVIF images. Also provider AVIF support for Nuke. Have support for older versions of iOS that doesn't have support for AVIF images
 
 Library uses precompiled `libaom` and `dav1d` to ensure in fast encoding/decoding
 </br>
