@@ -4,7 +4,8 @@
 
 A package to display AVIF on iOS and MacOS or encode AVIF images. Also provider AVIF support for Nuke. Have support for older versions of iOS that doesn't have support for AVIF images
 
-Library uses precompiled `libaom` and `dav1d` to ensure in fast encoding/decoding
+Package based on `dav1d` to have the best speed of decompressing on devices that do not have support for AV1 hardware codec.
+As AVIF encoder have `aom` as just this one looks reasonable to encode AVIF images on mobile devices
 </br>
 Main aim of the project is to use `AVIF` image in `iOS` etc with usable speed and convenience
 
