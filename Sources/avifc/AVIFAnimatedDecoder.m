@@ -53,6 +53,7 @@
     avifRGBImage rgbImage;
     avifRGBImageSetDefaults(&rgbImage, _idec->image);
     rgbImage.format = AVIF_RGB_FORMAT_RGBA;
+    rgbImage.depth = 8;
     avifRGBImageAllocatePixels(&rgbImage);
     avifResult rgbResult = avifImageYUVToRGB(_idec->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
@@ -73,15 +74,15 @@
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
     
-    CGDataProviderRef provider = CGDataProviderCreateWithData(premultiplied, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AV1CGDataProviderReleaseDataCallback);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
         free(premultiplied);
         return NULL;
     }
     
-    CGImageRef image = CGImageCreate(newWidth, newHeight, depth, 32*depth / 8, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
+    CGImageRef image = CGImageCreate(newWidth, newHeight, depth, 32, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
 
-    CFRelease(provider);
+    CGDataProviderRelease(provider);
     CGColorSpaceRelease(colorSpace);
     return image;
 }
