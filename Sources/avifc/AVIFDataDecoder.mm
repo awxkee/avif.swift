@@ -101,7 +101,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         image = [UIImage imageWithCGImage:imageRef scale:1 orientation: UIImageOrientationUp];
 #endif
 
-        CFRelease(provider);
+        CGDataProviderRelease(provider);
         CGImageRelease(imageRef);
         CGColorSpaceRelease(colorSpace);
         return image;
@@ -263,7 +263,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 #endif
 
     CGColorSpaceRelease(colorSpace);
-    CFRelease(provider);
+    CGDataProviderRelease(provider);
     CGImageRelease(imageRef);
     return image;
 }

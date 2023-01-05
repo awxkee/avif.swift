@@ -35,6 +35,7 @@
     avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
     avifRGBImageSetDefaults(&rgb, image);
     avifRGBImageAllocatePixels(&rgb);
+    rgb.alphaPremultiplied = true;
     memcpy(rgb.pixels, rgba, rgb.rowBytes * image->height);
     
     free(rgba);

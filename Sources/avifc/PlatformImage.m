@@ -21,13 +21,13 @@
     CGImageRef imageRef = [self makeCGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
-    int targetBytesPerRow = ((4 * (int)width) + 31) & (~31);
-    uint8_t *targetMemory = malloc((int)(targetBytesPerRow * height));
+    int stride = (int)4 * (int)width * sizeof(uint8_t);
+    uint8_t *targetMemory = malloc((int)(stride * height));
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGBitmapInfo bitmapInfo = kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Host;
+    CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big;
 
-    CGContextRef targetContext = CGBitmapContextCreate(targetMemory, width, height, 8, targetBytesPerRow, colorSpace, bitmapInfo);
+    CGContextRef targetContext = CGBitmapContextCreate(targetMemory, width, height, 8, stride, colorSpace, bitmapInfo);
 
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext: [NSGraphicsContext graphicsContextWithCGContext:targetContext flipped:FALSE]];
@@ -40,28 +40,9 @@
 
     [NSGraphicsContext restoreGraphicsState];
 
-    int bufferBytesPerRow = ((3 * (int)width) + 31) & (~31);
-    uint8_t *buffer = malloc(bufferBytesPerRow * height);
-
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            uint32_t *color = ((uint32_t *)&targetMemory[y * targetBytesPerRow + x * 4]);
-
-            uint32_t r = ((*color >> 16) & 0xff);
-            uint32_t g = ((*color >> 8) & 0xff);
-            uint32_t b = (*color & 0xff);
-
-            buffer[y * bufferBytesPerRow + x * 3 + 0] = r;
-            buffer[y * bufferBytesPerRow + x * 3 + 1] = g;
-            buffer[y * bufferBytesPerRow + x * 3 + 2] = b;
-        }
-    }
-
     CGContextRelease(targetContext);
 
-    free(targetMemory);
-
-    return buffer;
+    return targetMemory;
 }
 #else
 - (unsigned char *)rgbaPixels {
@@ -69,7 +50,7 @@
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    unsigned char *rawData = (unsigned char*) calloc(height * width * 4, sizeof(unsigned char));
+    unsigned char *rawData = (unsigned char*) malloc(height * width * 4 * sizeof(uint8_t));
     NSUInteger bytesPerPixel = 4;
     NSUInteger bytesPerRow = bytesPerPixel * width;
     NSUInteger bitsPerComponent = 8;
@@ -80,12 +61,7 @@
     
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
     CGContextRelease(context);
-    
-    unsigned char* newBytes = [AVIFRGBAMultiplier unpremultiplyBytes:rawData width:width height:height depth:8];
-    if (newBytes) {
-        free(rawData);
-        rawData = newBytes;
-    }
+
     return rawData;
 }
 #endif
