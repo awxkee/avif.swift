@@ -22,7 +22,7 @@
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
     int stride = (int)4 * (int)width * sizeof(uint8_t);
-    uint8_t *targetMemory = malloc((int)(stride * height));
+    uint8_t *targetMemory = reinterpret_cast<uint8_t*>(malloc((int)(stride * height)));
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big;

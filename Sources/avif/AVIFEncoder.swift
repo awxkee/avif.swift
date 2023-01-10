@@ -32,7 +32,10 @@ public class AVIFEncoder {
         let destSize = NSMakeSize(CGFloat(size.width), CGFloat(size.height))
         let newImage = NSImage(size: destSize)
         newImage.lockFocus()
-        image.draw(in: NSMakeRect(0, 0, destSize.width, destSize.height), from: NSMakeRect(0, 0, image.size.width, image.size.height), operation: NSCompositingOperation.copy, fraction: CGFloat(1))
+        image.draw(in: NSMakeRect(0, 0, destSize.width, destSize.height),
+                   from: NSMakeRect(0, 0, image.size.width, image.size.height),
+                   operation: NSCompositingOperation.copy,
+                   fraction: CGFloat(1))
         newImage.unlockFocus()
         newImage.size = destSize
         return NSImage(data: newImage.tiffRepresentation!)!

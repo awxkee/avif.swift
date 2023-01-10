@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libaom.swift.git",
       "state" : {
-        "revision" : "968e44ab7d53a78439caabe4fe0e19e1b5207a1e",
-        "version" : "1.0.1"
+        "revision" : "5edd755916eaf0951b8d92ca2c5b3941ead9a9a0",
+        "version" : "1.0.2"
       }
     },
     {
@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
-        "revision" : "44e67528b0ad5e8f8840af727949925826c6162a",
-        "version" : "1.0.2"
+        "revision" : "8b5c794bae0190792e6969e2e9bdde9529deb8e9",
+        "version" : "1.0.4"
       }
     },
     {
@@ -23,8 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libyuv.swift.git",
       "state" : {
-        "revision" : "27a7157a956b5d95f07d8b2b29d61c5fcd8c4f4d",
-        "version" : "1.0.0"
+        "revision" : "6ccc8fc35d5f6e5b419c0792f0b1de8e5a448e45",
+        "version" : "1.0.1"
       }
     },
     {
@@ -32,8 +32,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kean/Nuke.git",
       "state" : {
-        "revision" : "93c8dc78fbc0aa3538a0db460eb389d4180af242",
-        "version" : "11.3.1"
+        "revision" : "2e9337168d08acccf72c039bf9324be24a1cf7d7",
+        "version" : "11.5.3"
       }
     }
   ],

@@ -40,6 +40,12 @@ public final class AVIFDecoder {
         return image
     }
 
+    public static func decode(from data: Data, sampleSize: CGSize = .zero) throws -> PlatformImage {
+        let iStream = InputStream(data: data)
+        let image = try AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: 0)
+        return image
+    }
+
     public static func readSize(data: Data) throws -> CGSize {
         guard let decoder = avifDecoderCreate() else {
             throw AVIFUnderlyingError(underlyingError: "Can't initialize decoder")

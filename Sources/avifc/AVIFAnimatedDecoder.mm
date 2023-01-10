@@ -18,7 +18,7 @@
 -(nullable id)initWithData:(nonnull NSData*)data {
     _idec = avifDecoderCreate();
 
-    avifDecoderSetIOMemory(_idec, data.bytes, data.length);
+    avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t*>(data.bytes), data.length);
     CGFloat scale = 1;
     
     _idec->strictFlags = AVIF_STRICT_DISABLED;
@@ -74,7 +74,7 @@
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
     
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, premultiplied, rgbImage.width*rgbImage.height*rgbImage.depth/2, AV1CGDataProviderReleaseDataCallback);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, premultiplied, rgbImage.width*rgbImage.height*4, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
         free(premultiplied);
         return NULL;

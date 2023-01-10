@@ -76,11 +76,12 @@
 }
 
 +(nullable NSData*)unpremultiply:(nonnull NSData*)data width:(NSInteger)width height:(NSInteger)height depth:(NSInteger)depth {
+    int stride = (int)width * (depth > 8 ? sizeof(uint16_t) : sizeof(uint8_t));
     void* unpremultipliedBytes = [AVIFRGBAMultiplier unpremultiplyBytes:(unsigned char*)data.bytes width:width height:height depth:depth];
     if (!unpremultipliedBytes) {
         return nil;
     }
-    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:unpremultipliedBytes length:width*height*depth/2 deallocator:^(void * _Nonnull bytes, NSUInteger length) {
+    NSData* returningData = [[NSData alloc] initWithBytesNoCopy:unpremultipliedBytes length:height*stride deallocator:^(void * _Nonnull bytes, NSUInteger length) {
         free(bytes);
     }];
     return returningData;
