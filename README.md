@@ -27,6 +27,7 @@ at the time of writing.
 ## Usage
 
 ```swift
+import avif
 // Decompress data
 let uiImage: UIImage? = AVIFDecoder.decode(Data(), sampleSize: .zero) // or any max CGSize of image
 // Compress
