@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
-        "revision" : "8b5c794bae0190792e6969e2e9bdde9529deb8e9",
-        "version" : "1.0.4"
+        "revision" : "2fc752ca4a6a3e4822e70ec92660994cb5b03e1f",
+        "version" : "1.0.5"
       }
     },
     {
@@ -32,8 +32,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kean/Nuke.git",
       "state" : {
-        "revision" : "2e9337168d08acccf72c039bf9324be24a1cf7d7",
-        "version" : "11.5.3"
+        "revision" : "f4d9b95788679d0654c032961f73e7e9c16ca6b4",
+        "version" : "12.1.0"
       }
     }
   ],
