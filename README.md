@@ -1,6 +1,7 @@
 # avif.swift
 
 ## What's This?
+Introducing AVIF.swift, the ultimate image decoding solution for AVIF images on iOS and macOS. The AVIFDecoder.decode method allows you to easily read and write AVIF images using the power of Swift. With AVIF.swift, you can decode AVIF images with up to 50% smaller file sizes and 25% better compression than JPEG, all while maintaining the highest quality. This package is compatible with both Swift Package Manager and CocoaPods. Try AVIF.swift today and see the difference for yourself. Check it out at https://github.com/awxkee/avif.swift
 
 This package is provides full (compatibility support) for AVIF images for all apple platforms. Supports encode AVIF and decode AVIF images in convinient and fast way
 
