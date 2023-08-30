@@ -7,7 +7,9 @@
 
 import Foundation
 import Nuke
+#if canImport(avif)
 import avif
+#endif
 
 public final class AVIFNukePlugin: Nuke.ImageDecoding {
 

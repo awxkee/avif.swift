@@ -11,7 +11,7 @@
 #include "PlatformImage.h"
 
 @interface AVIFAnimatedEncoder : NSObject
-- (void)create;
+- (nullable void*)create:(NSError * _Nullable * _Nullable)error;
 - (void* _Nullable)addImage:(Image * _Nonnull)platformImage duration:(NSUInteger)timescale error:(NSError * _Nullable * _Nullable)error;
 - (NSData* _Nullable)encode:(NSError * _Nullable *_Nullable)error;
 - (void)setSpeed:(NSInteger)speed;

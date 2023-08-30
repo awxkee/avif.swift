@@ -62,7 +62,50 @@ let avifimageURL = URL(string: "https://bestavifdomain.com/sample.avif")!
 Nuke.loadImage(with: url, into: imageView)
 ```
 
-Currently, avif nuke plugin do not support animated avifs so you have to do it yourself
+## SDWebImage Plugin
+If you wish to use `AVIF`  with <a href="https://github.com/SDWebImage/SDWebImage" target="_blank">`SDWebImage`</a> you may use provided plugin
+
+```swift
+import SDWebImage
+#if canImport(avif)
+import avif
+#endif
+
+public class SDWebImageAVIFCoder: NSObject, SDImageCoder {
+    public func canDecode(from data: Data?) -> Bool {
+        guard let data else { return false }
+        return data.isAVIFFormat
+    }
+
+    public func decodedImage(with data: Data?, options: [SDImageCoderOption : Any]? = nil) -> UIImage? {
+        guard let data else {
+            return nil
+        }
+        return AVIFDecoder.decode(data)
+    }
+
+    public func canEncode(to format: SDImageFormat) -> Bool {
+        return true
+    }
+
+    public func encodedData(with image: UIImage?, format: SDImageFormat, options: [SDImageCoderOption : Any]? = nil) -> Data? {
+        guard let image else {
+            return nil
+        }
+        return try? AVIFEncoder.encode(image: image, quality: 50)
+    }
+
+    public override init() {
+    }
+}
+```
+
+And after register the plugin
+```swift
+SDImageCodersManager.shared.addCoder(SDWebImageAVIFCoder())
+```
+
+Currently, avif nuke and SDWebImage plugin do not support animated avifs so you have to do it yourself
 
 ## Disclaimer
 

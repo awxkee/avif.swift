@@ -16,13 +16,22 @@
     [self cleanUp];
 }
 
-- (void)create {
+- (void*)create:(NSError * _Nullable * _Nullable)error {
     encoder = avifEncoderCreate();
+    if (!encoder) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder allocation has failed" }];
+        return nil;
+    }
     encoder->maxThreads = 6;
     encoder->timescale = 1000;
+    return (__bridge void * _Nullable)(self);
 }
 
 - (void* _Nullable)addImage:(Image * _Nonnull)platformImage duration:(NSUInteger)duration error:(NSError * _Nullable * _Nullable)error {
+    if (!encoder) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder is not allocation" }];
+        return nil;
+    }
     unsigned char * rgba = [platformImage rgbaPixels];
 #if TARGET_OS_OSX
     int width = [platformImage size].width;
@@ -33,6 +42,11 @@
 #endif
     avifRGBImage rgb;
     avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
+    if (!image) {
+        free(rgba);
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
+        return nil;
+    }
     avifRGBImageSetDefaults(&rgb, image);
     avifRGBImageAllocatePixels(&rgb);
     rgb.depth = 8;

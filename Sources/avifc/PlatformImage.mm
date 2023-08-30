@@ -25,7 +25,7 @@
     uint8_t *targetMemory = reinterpret_cast<uint8_t*>(malloc((int)(stride * height)));
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGBitmapInfo bitmapInfo = kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big;
+    CGBitmapInfo bitmapInfo = (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrder32Big;
 
     CGContextRef targetContext = CGBitmapContextCreate(targetMemory, width, height, 8, stride, colorSpace, bitmapInfo);
 
@@ -56,7 +56,7 @@
     NSUInteger bitsPerComponent = 8;
     CGContextRef context = CGBitmapContextCreate(rawData, width, height,
                                                  bitsPerComponent, bytesPerRow, colorSpace,
-                                                 kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                                                 (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrder32Big);
     CGColorSpaceRelease(colorSpace);
     
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);

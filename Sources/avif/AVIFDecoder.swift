@@ -29,6 +29,15 @@ public final class AVIFDecoder {
     public init() {
     }
 
+    public func isAVIF(data: Data) -> Bool {
+        do {
+            let ss = try AVIFDecoder.readSize(data: data)
+            return ss.width > 0 && ss.height > 0
+        } catch {
+            return false
+        }
+    }
+
     public func decodePartiallyDownloadedData(_ data: Data) -> PlatformImage? {
         guard let image = decoder.incrementallyDecode(data) else { return nil }
         return image

@@ -54,6 +54,7 @@
     avifRGBImageSetDefaults(&rgbImage, _idec->image);
     rgbImage.format = AVIF_RGB_FORMAT_RGBA;
     rgbImage.depth = 8;
+    rgbImage.alphaPremultiplied = true;
     avifRGBImageAllocatePixels(&rgbImage);
     avifResult rgbResult = avifImageYUVToRGB(_idec->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
@@ -65,25 +66,25 @@
     int newHeight = rgbImage.height;
     int newRowBytes = rgbImage.rowBytes;
     int depth = rgbImage.depth;
-    void* premultiplied = [AVIFRGBAMultiplier premultiplyBytes:rgbImage.pixels width:rgbImage.width height:rgbImage.height depth:rgbImage.depth];
-    avifRGBImageFreePixels(&rgbImage);
-    if (!premultiplied) {
+    auto storedImage = malloc(rgbImage.height * rgbImage.rowBytes);
+
+    if (!storedImage) {
+        avifRGBImageFreePixels(&rgbImage);
         return nil;
     }
-    
+    memcpy(storedImage, rgbImage.pixels, rgbImage.height * rgbImage.rowBytes);
+    avifRGBImageFreePixels(&rgbImage);
+
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    int flags = kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast;
+    int flags = (int)kCGBitmapByteOrder32Big | (int)kCGImageAlphaPremultipliedLast;
     
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, premultiplied, rgbImage.width*rgbImage.height*4, AV1CGDataProviderReleaseDataCallback);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, storedImage, rgbImage.width*rgbImage.height*4, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
-        free(premultiplied);
+        free(storedImage);
         return NULL;
     }
     
     CGImageRef image = CGImageCreate(newWidth, newHeight, depth, 32, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
-
-    CGDataProviderRelease(provider);
-    CGColorSpaceRelease(colorSpace);
     return image;
 }
 

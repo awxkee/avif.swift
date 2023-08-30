@@ -19,6 +19,15 @@
       }
     },
     {
+      "identity" : "libwebp-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libwebp-ios.git",
+      "state" : {
+        "revision" : "dd1e1e5d8a03c96b3dd361ba8c5f398d911e5405",
+        "version" : "1.0.5"
+      }
+    },
+    {
       "identity" : "libyuv.swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libyuv.swift.git",
@@ -32,8 +41,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/kean/Nuke.git",
       "state" : {
-        "revision" : "f4d9b95788679d0654c032961f73e7e9c16ca6b4",
-        "version" : "12.1.0"
+        "revision" : "3f666f120b63ea7de57d42e9a7c9b47f8e7a290b",
+        "version" : "12.1.6"
       }
     }
   ],
