@@ -158,7 +158,13 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 #endif
 }
 
-- (nullable Image *)decode:(nonnull NSInputStream *)inputStream sampleSize:(CGSize)sampleSize maxContentSize:(NSUInteger)maxContentSize error:(NSError *_Nullable * _Nullable)error {
+- (nullable Image *)decode:(nonnull NSInputStream *)inputStream sampleSize:(CGSize)sampleSize maxContentSize:(NSUInteger)maxContentSize scale:(CGFloat)scale error:(NSError *_Nullable * _Nullable)error {
+    if (scale < 1) {
+        *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: @"Scale cannot be less than 1" }];
+        return nil;
+    }
     NSInteger result;
     int bufferLength = 30196;
     uint8_t buffer[bufferLength];
@@ -191,7 +197,6 @@ void sharedDecoderDeallocator(avifDecoder* d) {
     std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
 
     avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
-    CGFloat scale = 1;
     
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;

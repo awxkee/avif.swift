@@ -43,15 +43,15 @@ public final class AVIFDecoder {
         return image
     }
 
-    public static func decode(_ data: Data, sampleSize: CGSize = .zero) -> PlatformImage? {
+    public static func decode(_ data: Data, scale: CGFloat = 1, sampleSize: CGSize = .zero) -> PlatformImage? {
         let iStream = InputStream(data: data)
-        guard let image = try? AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: 0) else { return nil }
+        guard let image = try? AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: 0, scale: scale) else { return nil }
         return image
     }
 
-    public static func decode(from data: Data, sampleSize: CGSize = .zero) throws -> PlatformImage {
+    public static func decode(from data: Data, scale: CGFloat = 1, sampleSize: CGSize = .zero) throws -> PlatformImage {
         let iStream = InputStream(data: data)
-        let image = try AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: 0)
+        let image = try AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: 0, scale: scale)
         return image
     }
 
@@ -98,11 +98,11 @@ public final class AVIFDecoder {
         return try readSize(path: at.path)
     }
     
-    public static func decode(at: URL, sampleSize: CGSize = .zero) throws -> PlatformImage {
+    public static func decode(at: URL, scale: CGFloat = 1, sampleSize: CGSize = .zero) throws -> PlatformImage {
         guard let iStream = InputStream(url: at) else {
             throw OpenStreamError()
         }
-        let image = try AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: UInt(1024*1024*10))
+        let image = try AVIFDataDecoder().decode(iStream, sampleSize: sampleSize, maxContentSize: UInt(1024*1024*10), scale: scale)
         return image
     }
 
