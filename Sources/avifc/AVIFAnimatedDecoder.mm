@@ -10,6 +10,7 @@
 #import <Accelerate/Accelerate.h>
 #import "AVIFRGBAMultiplier.h"
 #import "PlatformImage.h"
+#import "AVIFImageXForm.h"
 
 @implementation AVIFAnimatedDecoder {
     avifDecoder *_idec;
@@ -49,43 +50,8 @@
     if (nextImageResult != AVIF_RESULT_OK) {
         return nil;
     }
-    
-    avifRGBImage rgbImage;
-    avifRGBImageSetDefaults(&rgbImage, _idec->image);
-    rgbImage.format = AVIF_RGB_FORMAT_RGBA;
-    rgbImage.depth = 8;
-    rgbImage.alphaPremultiplied = true;
-    avifRGBImageAllocatePixels(&rgbImage);
-    avifResult rgbResult = avifImageYUVToRGB(_idec->image, &rgbImage);
-    if (rgbResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgbImage);
-        return nil;
-    }
-    
-    int newWidth = rgbImage.width;
-    int newHeight = rgbImage.height;
-    int newRowBytes = rgbImage.rowBytes;
-    int depth = rgbImage.depth;
-    auto storedImage = malloc(rgbImage.height * rgbImage.rowBytes);
-
-    if (!storedImage) {
-        avifRGBImageFreePixels(&rgbImage);
-        return nil;
-    }
-    memcpy(storedImage, rgbImage.pixels, rgbImage.height * rgbImage.rowBytes);
-    avifRGBImageFreePixels(&rgbImage);
-
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    int flags = (int)kCGBitmapByteOrder32Big | (int)kCGImageAlphaPremultipliedLast;
-    
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, storedImage, rgbImage.width*rgbImage.height*4, AV1CGDataProviderReleaseDataCallback);
-    if (!provider) {
-        free(storedImage);
-        return NULL;
-    }
-    
-    CGImageRef image = CGImageCreate(newWidth, newHeight, depth, 32, newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
-    return image;
+    auto xForm = [[AVIFImageXForm alloc] init];
+    return [xForm formCGImage:_idec scale:1];
 }
 
 -(int)frameDuration:(int)frame {
