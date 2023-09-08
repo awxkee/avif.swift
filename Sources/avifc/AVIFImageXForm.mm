@@ -10,6 +10,8 @@
 #import <vector>
 #import <Accelerate/Accelerate.h>
 #import <CoreGraphics/CoreGraphics.h>
+#import "PerceptualQuantinizer.h"
+#import "TargetConditionals.h"
 
 @implementation AVIFImageXForm
 
@@ -96,23 +98,10 @@
         }
         else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
-            CGColorSpaceRef bt2020pq = NULL;
-            CFStringRef colorSpaceName = NULL;
-            if (@available(macOS 11.0, iOS 14.0, tvOS 14.0, watchOS 7.0, *)) {
-                colorSpaceName = kCGColorSpaceITUR_2100_PQ;
-            } else if (@available(macOS 10.15.4, iOS 13.4, tvOS 13.4, watchOS 6.2, *)) {
-                colorSpaceName = kCGColorSpaceITUR_2020_PQ;
-            } else if (@available(macOS 10.14.6, iOS 12.6, tvOS 12.0, watchOS 5.0, *)) {
-                colorSpaceName = kCGColorSpaceITUR_2020_PQ_EOTF;
-            }
-            if (colorSpaceName) {
-                bt2020pq = CGColorSpaceCreateWithName(colorSpaceName);
-            } else {
-                bt2020pq = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = bt2020pq;
+            [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+                                     stride:stride width:newWidth height:newHeight U16:depth > 8 depth:depth half:depth > 8];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
+                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             static CGColorSpaceRef bt2020linear = NULL;
             if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
                 bt2020linear = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearITUR_2020);
@@ -121,7 +110,7 @@
             }
             colorSpace = bt2020linear;
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SRGB) {
+                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SRGB) {
             CGColorSpaceRef p3 = NULL;
             if (@available(macOS 10.11.2, iOS 9.3, tvOS 9.3, *)) {
                 p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
@@ -130,7 +119,7 @@
             }
             colorSpace = p3;
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
+                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
             CGColorSpaceRef p3hlg = NULL;
             if (@available(macOS 10.14.6, iOS 13.0, tvOS 13.0, *)) {
                 p3hlg = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3_HLG);
@@ -140,7 +129,7 @@
             colorSpace = p3hlg;
         }
         else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
+                 transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
             if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
                 p3linear = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearDisplayP3);
@@ -177,7 +166,7 @@
 - (nullable Image*)form:(nonnull avifDecoder*)decoder scale:(CGFloat)scale {
     auto imageRef = [self formCGImage:decoder scale:scale];
     Image *image = nil;
-#if AVIF_PLUGIN_MAC
+#if TARGET_OS_OSX
     image = [[NSImage alloc] initWithCGImage:imageRef size:CGSizeZero];
 #else
     image = [UIImage imageWithCGImage:imageRef scale:scale orientation:UIImageOrientationUp];

@@ -20,6 +20,7 @@ let package = Package(
         .package(url: "https://github.com/awxkee/libyuv.swift.git", "1.0.0"..<"1.1.0"),
         .package(url: "https://github.com/awxkee/libwebp-ios.git", "1.0.0"..<"1.1.0"),
         .package(url: "https://github.com/kean/Nuke.git", "12.0.0"..<"13.0.0"),
+        .package(url: "https://github.com/awxkee/libsvtav1enc.swift", "1.0.0"..<"2.0.0")
     ],
     targets: [
         .target(
@@ -30,6 +31,7 @@ let package = Package(
             dependencies: ["avifc"]),
         .target(name: "avifc",
                 dependencies: [.target(name: "libavif")],
+                resources: [.copy("Metal/SMPTE2084.metal")],
                 linkerSettings: [
                     .linkedFramework("Accelerate")
                 ]),
@@ -37,6 +39,7 @@ let package = Package(
                 dependencies: [
                     .product(name: "libaom", package: "libaom.swift"),
                                .product(name: "libdav1d", package: "libdav1d.swift"),
+                               .product(name: "libSvtAv1Enc", package: "libsvtav1enc.swift"),
                                .product(name: "libyuv", package: "libyuv.swift"),
                     .product(name: "libwebp", package: "libwebp-ios")],
                 publicHeadersPath: "include",
@@ -45,14 +48,16 @@ let package = Package(
                     .define("AVIF_CODEC_AOM", to: "1"),
                     .define("AVIF_CODEC_DAV1D", to: "1"),
                     .define("AVIF_LIBYUV_ENABLED", to: "1"),
-                    .define("AVIF_LIBSHARPYUV_ENABLED", to: "1")
+                    .define("AVIF_LIBSHARPYUV_ENABLED", to: "1"),
+                    .define("AVIF_CODEC_SVT", to: "1")
                 ],
                 cxxSettings: [
                     .define("AVIF_CODEC_AOM_ENCODE", to: "1"),
                     .define("AVIF_CODEC_AOM", to: "1"),
                     .define("AVIF_CODEC_DAV1D", to: "1"),
                     .define("AVIF_LIBYUV_ENABLED", to: "1"),
-                    .define("AVIF_LIBSHARPYUV_ENABLED", to: "1")
+                    .define("AVIF_LIBSHARPYUV_ENABLED", to: "1"),
+                    .define("AVIF_CODEC_SVT", to: "1")
                 ])
     ],
     cxxLanguageStandard: .cxx20

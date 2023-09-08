@@ -58,7 +58,7 @@
                                                  bitsPerComponent, bytesPerRow, colorSpace,
                                                  (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrder32Big);
     CGColorSpaceRelease(colorSpace);
-    
+
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
     CGContextRelease(context);
 

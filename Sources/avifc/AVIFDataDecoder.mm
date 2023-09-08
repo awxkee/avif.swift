@@ -16,6 +16,7 @@
 #import "AVIFRGBAMultiplier.h"
 #import <vector>
 #import "AVIFImageXForm.h"
+#import "PerceptualQuantinizer.h"
 
 @implementation AVIFDataDecoder {
     avifDecoder *_idec;
