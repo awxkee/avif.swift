@@ -1,8 +1,8 @@
 //
-//  AVIFEncoding.h
+//  Rgb1010102Converter.h
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 01/05/2022.
+//  Created by Radzivon Bartoshyk on 10/09/2022.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -23,18 +23,12 @@
 //  THE SOFTWARE.
 //
 
-#import "AVIFImageMacros.h"
+#ifndef Rgb1010102Converter_h
+#define Rgb1010102Converter_h
 
-#if AVIF_PLUGIN_MAC
-#import <AppKit/AppKit.h>
-#define Image   NSImage
-#else
-#import <UIKit/UIKit.h>
-#define Image   UIImage
-#endif
-
-@interface AVIFEncoding : NSObject
-
-- (nullable NSData *)encodeImage:(nonnull Image *)platformImage speed:(NSInteger)speed quality:(double)quality error:(NSError * _Nullable *_Nullable)error;
-
+@interface Rgb1010102Converter : NSObject
++(bool)F16ToRGBA1010102:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(nonnull int*)stride width:(int)width height:(int)height;
++(bool)F16ToU16:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height;
 @end
+
+#endif /* Rgb1010102Converter_h */

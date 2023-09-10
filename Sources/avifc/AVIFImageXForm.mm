@@ -1,8 +1,26 @@
 //
-//  AVIFImageXForm.m
-//  
+//  AVIFImageXForm.mm
+//  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 02/09/2023.
+//  Created by Radzivon Bartoshyk on 02/09/2022.
+//
+//  Permission is hereby granted, free of charge, to any person obtaining a copy
+//  of this software and associated documentation files (the "Software"), to deal
+//  in the Software without restriction, including without limitation the rights
+//  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//  copies of the Software, and to permit persons to whom the Software is
+//  furnished to do so, subject to the following conditions:
+//
+//  The above copyright notice and this permission notice shall be included in
+//  all copies or substantial portions of the Software.
+//
+//  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+//  THE SOFTWARE.
 //
 
 #import <Foundation/Foundation.h>
@@ -12,6 +30,8 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import "PerceptualQuantinizer.h"
 #import "TargetConditionals.h"
+#import "Rgb1010102Converter.h"
+#import "RgbTransfer.h"
 
 @implementation AVIFImageXForm
 
@@ -43,10 +63,16 @@
     int newWidth = rgbImage.width;
     int newHeight = rgbImage.height;
     int newRowBytes = rgbImage.rowBytes;
-    int depth = isImageRequires64Bit ? 16 : 8;
+    int depth = decoder->image->depth == 10 ? 10 : (decoder->image->depth > 8 ? 16 : 8);
     int stride = rgbImage.rowBytes;
     auto pixelsData = reinterpret_cast<unsigned char*>(malloc(stride * newHeight));
-    memcpy(pixelsData, rgbImage.pixels, stride * newHeight);
+
+    if (![RgbTransfer CopyBuffer:rgbImage.pixels dst:pixelsData stride:stride width:newWidth height:newHeight pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t)]) {
+        avifRGBImageFreePixels(&rgbImage);
+        free(pixelsData);
+        return nil;
+    }
+
     avifRGBImageFreePixels(&rgbImage);
 
     CGColorSpaceRef colorSpace;
@@ -100,10 +126,18 @@
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
             [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
                                      stride:stride width:newWidth height:newHeight U16:depth > 8 depth:depth half:depth > 8];
-            if (depth > 8) {
-                colorSpace = CGColorSpaceCreateExtendedLinearized(CGColorSpaceCreateWithName(kCGColorSpaceExtendedITUR_2020));
+            if (depth > 8 && depth != 10) {
+                if (@available(iOS 14.0, *)) {
+                    colorSpace = CGColorSpaceCreateExtendedLinearized(CGColorSpaceCreateWithName(kCGColorSpaceExtendedITUR_2020));
+                } else {
+                    colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
+                }
             } else {
-                colorSpace = CGColorSpaceCreateLinearized(CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020));
+                if (@available(iOS 14.0, *)) {
+                    colorSpace = CGColorSpaceCreateLinearized(CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020));
+                } else {
+                    colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
+                }
             }
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                    transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
@@ -152,10 +186,21 @@
         colorSpace = CGColorSpaceCreateDeviceRGB();
     }
     int flags;
-    if (isImageRequires64Bit) {
-        flags = (int)kCGImageByteOrder16Little | (int)kCGImageAlphaLast | (int)kCGBitmapFloatComponents;
+    if (depth == 10) {
+        flags = (int)kCGBitmapByteOrder32Big | (int)kCGImagePixelFormatRGB101010 | (int)kCGImageAlphaLast;
+        uint8_t* rgb1010102Buffer = reinterpret_cast<uint8_t*>(malloc(newWidth * 4 * sizeof(uint8_t) * newHeight));
+        if (![Rgb1010102Converter F16ToRGBA1010102:pixelsData dst:rgb1010102Buffer stride:&stride width:newWidth height:newHeight]) {
+            free(pixelsData);
+            return NULL;
+        }
+        free(pixelsData);
+        pixelsData = rgb1010102Buffer;
     } else {
-        flags = (int)kCGBitmapByteOrder32Big | (int)kCGImageAlphaPremultipliedLast;
+        if (isImageRequires64Bit) {
+            flags = (int)kCGImageByteOrder16Little | (int)kCGImageAlphaLast | (int)kCGBitmapFloatComponents;
+        } else {
+            flags = (int)kCGBitmapByteOrder32Big | (int)kCGImageAlphaPremultipliedLast;
+        }
     }
     CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixelsData, stride*newHeight, AV1CGDataProviderReleaseDataCallback);
     if (!provider) {
@@ -163,8 +208,8 @@
         return NULL;
     }
 
-    CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, isImageRequires64Bit ? 64 : 32,
-                                        newRowBytes, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
+    CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, (depth == 10 || depth == 8) ? 32 : 64,
+                                        stride, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
     return imageRef;
 }
 
