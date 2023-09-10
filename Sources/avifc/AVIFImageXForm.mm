@@ -35,6 +35,29 @@
 
 @implementation AVIFImageXForm
 
++(bool)RGBA8toF16:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height {
+    int newStride = width * sizeof(uint16_t) * 4;
+
+    vImage_Buffer srcBuffer = {
+        .data = (void*)data,
+        .width = static_cast<vImagePixelCount>(width * 4),
+        .height = static_cast<vImagePixelCount>(height),
+        .rowBytes = static_cast<size_t>(stride)
+    };
+
+    vImage_Buffer dstBuffer = {
+        .data = dst,
+        .width = static_cast<vImagePixelCount>(width * 4),
+        .height = static_cast<vImagePixelCount>(height),
+        .rowBytes = static_cast<size_t>(newStride)
+    };
+    vImage_Error vEerror = vImageConvert_Planar8toPlanar16F(&srcBuffer, &dstBuffer, kvImageNoFlags);
+    if (vEerror != kvImageNoError) {
+        return false;
+    }
+    return true;
+}
+
 - (_Nullable CGImageRef)formCGImage:(nonnull avifDecoder*)decoder scale:(CGFloat)scale {
     avifRGBImage rgbImage;
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
@@ -124,6 +147,19 @@
         }
         else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+            // Almost no reason to use 8-bit for PQ
+            if (depth == 8) {
+                int newStride = newWidth * sizeof(uint16_t) * 4;
+                uint8_t* rgba16Buffer = reinterpret_cast<uint8_t*>(malloc(newHeight * newStride));
+                if (![AVIFImageXForm RGBA8toF16:pixelsData dst:rgba16Buffer stride:stride width:newWidth height:newHeight]) {
+                    free(rgba16Buffer);
+                } else {
+                    free(pixelsData);
+                    pixelsData = rgba16Buffer;
+                    stride = newStride;
+                    depth = 10;
+                }
+            }
             [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
                                      stride:stride width:newWidth height:newHeight U16:depth > 8 depth:depth half:depth > 8];
             if (depth > 8 && depth != 10) {
