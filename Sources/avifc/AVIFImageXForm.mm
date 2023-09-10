@@ -65,6 +65,8 @@
 
     auto colorPrimaries = decoder->image->colorPrimaries;
     auto transferCharacteristics = decoder->image->transferCharacteristics;
+    
+    decoder->maxThreads = 6;
 
     bool isImageRequires64Bit = avifImageUsesU16(decoder->image);
     if (isImageRequires64Bit) {
@@ -90,7 +92,8 @@
     int stride = rgbImage.rowBytes;
     auto pixelsData = reinterpret_cast<unsigned char*>(malloc(stride * newHeight));
 
-    if (![RgbTransfer CopyBuffer:rgbImage.pixels dst:pixelsData stride:stride width:newWidth height:newHeight pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t)]) {
+    if (![RgbTransfer CopyBuffer:rgbImage.pixels dst:pixelsData stride:stride width:newWidth height:newHeight
+                       pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t)]) {
         avifRGBImageFreePixels(&rgbImage);
         free(pixelsData);
         return nil;
