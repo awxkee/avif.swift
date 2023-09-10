@@ -131,7 +131,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
     }
     std::shared_ptr<avifEncoder> encoder(enc, releaseSharedEncoder);
     encoder->maxThreads = 6;
-    encoder->quality = quality;
+    encoder->quality = quality*100;
     if (speed != -1) {
         encoder->speed = (int)MAX(MIN(speed, AVIF_SPEED_FASTEST), AVIF_SPEED_SLOWEST);
     }

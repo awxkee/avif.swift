@@ -100,6 +100,11 @@
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
             [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
                                      stride:stride width:newWidth height:newHeight U16:depth > 8 depth:depth half:depth > 8];
+            if (depth > 8) {
+                colorSpace = CGColorSpaceCreateExtendedLinearized(CGColorSpaceCreateWithName(kCGColorSpaceExtendedITUR_2020));
+            } else {
+                colorSpace = CGColorSpaceCreateLinearized(CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020));
+            }
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                    transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             static CGColorSpaceRef bt2020linear = NULL;

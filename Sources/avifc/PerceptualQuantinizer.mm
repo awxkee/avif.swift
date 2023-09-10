@@ -24,6 +24,9 @@
 //
 
 // https://review.mlplatform.org/plugins/gitiles/ml/ComputeLibrary/+/6ff3b19ee6120edf015fad8caab2991faa3070af/arm_compute/core/NEON/NEMath.inl
+// https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2446-2019-PDF-E.pdf
+// https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.2100-2-201807-I!!PDF-E.pdf
+// https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2446-2019-PDF-E.pdf
 
 #import <Foundation/Foundation.h>
 #import "PerceptualQuantinizer.h"
@@ -70,13 +73,7 @@ float half_to_float(
                       0x007FE000))); // sign : normalized : denormalized
 }
 
-// Linear Tone Map
-float ToLinearToneMap(float v) {
-    v = fmaxf(0.0f, v);
-    return fminf(2.3f * powf(v, 2.8f), v / 5.0f + 0.8f);
-}
-
-float whitePoint = 80.0f;
+float whitePoint = 180.0f;
 
 float ToLinearPQ(float v) {
     v = std::max(0.0f, v);
@@ -107,58 +104,18 @@ float Luma(float r, float g, float b) {
     return r * 0.2627f + g * 0.6780f + b * 0.0593f;
 }
 
-TriStim ClipToWhite(TriStim *c) {
-    float maximum = std::max(std::max(c->r, c->g), c->b);
-    if (maximum > 1.0f) {
-        float l = Luma(*c);
-        c->r = c->r * 1.0f / maximum;
-        c->g = c->g * 1.0f / maximum;
-        c->b = c->b * 1.0f / maximum;
-        TriStim white = {1.0f, 1.0f, 1.0f};
-        white.r = white.r * (1.0f - 1.0f / maximum) * l / Luma(white);
-        white.g = white.g * (1.0f - 1.0f / maximum) * l / Luma(white);
-        white.b = white.b * (1.0f - 1.0f / maximum) * l / Luma(white);
-        TriStim black = {0.0f, 0.0f, 0.0f};
-        c->r += white.r - black.r;
-        c->g += white.g - black.g;
-        c->b += white.b - black.b;
-    }
-    return *c;
-}
-
 float clampf(float value, float min, float max) {
     return fmin(fmax(value, min), max);
-}
-
-float LinearToSRGB(float linearValue) {
-    // Apply gamma correction (EOTF) for sRGB
-    if (linearValue <= 0.0)
-        return 0.0;
-    else if (linearValue >= 1.0)
-        return 1.0;
-    else if (linearValue < 0.0031308)
-        return linearValue * 12.92f;
-    else
-        return powf(linearValue, 1.0f / 2.4f) * 1.055f - 0.055f;
 }
 
 void TransferROW_U16HFloats(uint16_t *data) {
     auto r = (float) half_to_float(data[0]);
     auto g = (float) half_to_float(data[1]);
     auto b = (float) half_to_float(data[2]);
-    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b));
-    if (luma > 0) {
-        TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-        float pq = Luma(smpte.r, smpte.g, smpte.b);
-        if (pq != 0) {
-            float scale = luma / pq;
-            TriStim stim = {smpte.r * scale, smpte.g * scale, smpte.b * scale};
-            ClipToWhite(&stim);
-            data[0] = float_to_half(LinearToSRGB((float) stim.r));
-            data[1] = float_to_half(LinearToSRGB((float) stim.g));
-            data[2] = float_to_half(LinearToSRGB((float) stim.b));
-        }
-    }
+    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    data[0] = float_to_half((float) smpte.r);
+    data[1] = float_to_half((float) smpte.g);
+    data[2] = float_to_half((float) smpte.b);
 }
 
 #if __arm64__
@@ -360,7 +317,6 @@ inline float32x4_t ClipToWhite(float32x4_t v) {
         white = vdivq_f32(vmulq_n_f32(vmulq_n_f32(white, dx), luma), LumaDup);
         //        float32x4_t black = {0.0f, 0.0f, 0.0f, 0.0f};
         v = vaddq_f32(vmulq_n_f32(v, scaler), white);
-        //        v = vsubq_f32(v, black);
     }
     return v;
 }
@@ -379,22 +335,8 @@ inline void SetPixelsRGBU8(float32x4_t rgb, uint8_t *vector, float maxColors) {
 }
 
 inline float32x4_t Transfer(float32x4_t rgb) {
-    float32x4_t linearTone = ToLinearToneMap(rgb);
-    float linearLuma = NeonLuma(linearTone);
-    if (linearLuma > 0) {
-        float32x4_t pq = ToLinearPQ(rgb);
-        float pqLuma = NeonLuma(pq);
-        if (pqLuma > 0) {
-            float scale = linearLuma / pqLuma;
-
-            float32x4_t channel = ClipToWhite(vmulq_n_f32(pq, scale));
-            channel[0] = LinearToSRGB(channel[0]);
-            channel[1] = LinearToSRGB(channel[1]);
-            channel[2] = LinearToSRGB(channel[2]);
-            return channel;
-        }
-    }
-    return rgb;
+    float32x4_t pq = ToLinearPQ(rgb);
+    return pq;
 }
 
 #endif
@@ -403,38 +345,20 @@ void TransferROW_U16(uint16_t *data, float maxColors) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
-    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b));
-    if (luma > 0) {
-        TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-        float pq = Luma(smpte.r, smpte.g, smpte.b);
-        if (pq != 0) {
-            float scale = luma / pq;
-            TriStim stim = {smpte.r * scale, smpte.g * scale, smpte.b * scale};
-            ClipToWhite(&stim);
-            data[0] = (uint16_t) clampf(LinearToSRGB((float) stim.r) * maxColors, 0, maxColors);
-            data[1] = (uint16_t) clampf(LinearToSRGB((float) stim.g) * maxColors, 0, maxColors);
-            data[2] = (uint16_t) clampf(LinearToSRGB((float) stim.b) * maxColors, 0, maxColors);
-        }
-    }
+    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    data[0] = (uint16_t) (float) smpte.r * maxColors;
+    data[1] = (uint16_t) (float) smpte.g * maxColors;
+    data[2] = (uint16_t) (float) smpte.b * maxColors;
 }
 
 void TransferROW_U8(uint8_t *data, float maxColors) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
-    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b));
-    if (luma > 0) {
-        TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-        float pq = Luma(smpte.r, smpte.g, smpte.b);
-        if (pq != 0) {
-            float scale = luma / pq;
-            TriStim stim = {smpte.r * scale, smpte.g * scale, smpte.b * scale};
-            ClipToWhite(&stim);
-            data[0] = (uint8_t) clampf(LinearToSRGB((float) stim.r) * maxColors, 0, maxColors);
-            data[1] = (uint8_t) clampf(LinearToSRGB((float) stim.g) * maxColors, 0, maxColors);
-            data[2] = (uint8_t) clampf(LinearToSRGB((float) stim.b) * maxColors, 0, maxColors);
-        }
-    }
+    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    data[0] = (uint8_t) clampf((float) smpte.r * maxColors, 0, maxColors);
+    data[1] = (uint8_t) clampf((float) smpte.g * maxColors, 0, maxColors);
+    data[2] = (uint8_t) clampf((float) smpte.b * maxColors, 0, maxColors);
 }
 
 @implementation PerceptualQuantinizer : NSObject
@@ -629,7 +553,6 @@ void TransferROW_U8(uint8_t *data, float maxColors) {
     }
     return;
 #endif
-    float maxNits = 80.0f;
     auto maxColors = powf(2, (float) depth) - 1;
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
