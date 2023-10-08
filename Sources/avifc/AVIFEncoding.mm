@@ -91,7 +91,12 @@ static void releaseSharedPixels(unsigned char * pixels) {
         // interpreted as SRGB anyway.
         image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
         image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
     }
+
+//    image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT2020;
+//    image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_HLG;
+//    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
 
     rgba.reset();
     avifResult convertResult = avifImageRGBToYUV(image.get(), &rgb);

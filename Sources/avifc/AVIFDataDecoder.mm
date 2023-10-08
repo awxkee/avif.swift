@@ -34,7 +34,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 }
 
 - (nullable Image *)incrementallyDecodeData:(NSData *)data {
-    
+
     if (!_idec) {
         _idec = avifDecoderCreate();
         // Disable strict mode to keep some AVIF image compatible
@@ -42,23 +42,23 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         if (!_idec) {
             return nil;
         }
-        
+
     }
-    
+
     avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t *>(data.bytes), data.length);
     avifResult decodeResult = avifDecoderParse(_idec);
-    
+
     if (decodeResult != AVIF_RESULT_OK && decodeResult != AVIF_RESULT_TRUNCATED_DATA) {
         NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
         avifDecoderDestroy(_idec);
         _idec = NULL;
         return nil;
     }
-    
+
     if (!_idec->allowProgressive) {
         NSLog(@"Progressive decoding is not allowed");
     }
-    
+
     // Static image
     if (_idec->imageCount >= 1) {
         avifResult nextImageResult = avifDecoderNextImage(_idec);
@@ -88,7 +88,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 - (nullable NSValue*)readSize:(nonnull NSData*)data error:(NSError *_Nullable * _Nullable)error {
     std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
     avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
-    
+
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
     avifResult decodeResult = avifDecoderParse(decoder.get());
@@ -99,7 +99,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
                                         userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"readSize in AVIF failed with result: %s", avifResultToString(decodeResult)] }];
         return nil;
     }
-    
+
     CGSize size = CGSizeMake(decoder->image->width, decoder->image->height);
 #if TARGET_OS_OSX
     return [NSValue valueWithSize:size];
@@ -111,7 +111,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 - (nullable NSValue*)readSizeFromPath:(nonnull NSString*)path error:(NSError *_Nullable * _Nullable)error {
     std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
     avifDecoderSetIOFile(decoder.get(), [path UTF8String]);
-    
+
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
     avifResult decodeResult = avifDecoderParse(decoder.get());
@@ -121,7 +121,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
                                         userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"readSize in AVIF failed with result: %s", avifResultToString(decodeResult)] }];
         return nil;
     }
-    
+
     CGSize size = CGSizeMake(decoder->image->width, decoder->image->height);
 
 #if TARGET_OS_OSX
@@ -132,96 +132,104 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 }
 
 - (nullable Image *)decode:(nonnull NSInputStream *)inputStream sampleSize:(CGSize)sampleSize maxContentSize:(NSUInteger)maxContentSize scale:(CGFloat)scale error:(NSError *_Nullable * _Nullable)error {
-    if (scale < 1) {
-        *error = [[NSError alloc] initWithDomain:@"AVIF"
-                                            code:500
-                                        userInfo:@{ NSLocalizedDescriptionKey: @"Scale cannot be less than 1" }];
-        return nil;
-    }
-    NSInteger result;
-    int bufferLength = 30196;
-    uint8_t buffer[bufferLength];
-    NSMutableData* data = [[NSMutableData alloc] init];
-    [inputStream open];
-    while((result = [inputStream read:buffer maxLength:bufferLength]) != 0) {
-        if(result > 0) {
-            [data appendBytes:&buffer[0] length:result];
-            if (maxContentSize > 0 && data.length > maxContentSize) {
-                *error = [[NSError alloc] initWithDomain:@"AVIF"
-                                                    code:500
-                                                userInfo:@{ NSLocalizedDescriptionKey: @"Content limit exceeded" }];
+    try {
+        if (scale < 1) {
+            *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: @"Scale cannot be less than 1" }];
+            return nil;
+        }
+        NSInteger result;
+        int bufferLength = 30196;
+        uint8_t buffer[bufferLength];
+        NSMutableData* data = [[NSMutableData alloc] init];
+        [inputStream open];
+        while((result = [inputStream read:buffer maxLength:bufferLength]) != 0) {
+            if(result > 0) {
+                [data appendBytes:&buffer[0] length:result];
+                if (maxContentSize > 0 && data.length > maxContentSize) {
+                    *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                        code:500
+                                                    userInfo:@{ NSLocalizedDescriptionKey: @"Content limit exceeded" }];
+                    [inputStream close];
+                    return nil;
+                }
+            } else {
+                auto err = [inputStream streamError];
+                if (err) {
+                    *error = err;
+                } else {
+                    *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                        code:500
+                                                    userInfo:@{ NSLocalizedDescriptionKey: @"Input stream signalled unknown error" }];
+                }
                 [inputStream close];
                 return nil;
             }
-        } else {
-            auto err = [inputStream streamError];
-            if (err) {
-                *error = err;
+        }
+        [inputStream close];
+        std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
+
+        avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
+
+        // Disable strict mode to keep some AVIF image compatible
+        decoder->strictFlags = AVIF_STRICT_DISABLED;
+        decoder->ignoreXMP = true;
+        decoder->ignoreExif = true;
+        avifResult decodeResult = avifDecoderParse(decoder.get());
+        if (decodeResult != AVIF_RESULT_OK) {
+            NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
+            *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(decodeResult)] }];
+            return nil;
+        }
+        // Static image
+        avifResult nextImageResult = avifDecoderNextImage(decoder.get());
+        if (nextImageResult != AVIF_RESULT_OK) {
+            NSLog(@"Failed to decode image: %s", avifResultToString(nextImageResult));
+            *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(nextImageResult)] }];
+            return nil;
+        }
+
+        if (!CGSizeEqualToSize(CGSizeZero, sampleSize)) {
+
+            float imageAspectRatio = (float)decoder->image->width / (float)decoder->image->height;
+            float canvasRatio = sampleSize.width / sampleSize.height;
+
+            float resizeFactor = 1.0f;
+
+            if (imageAspectRatio > canvasRatio) {
+                resizeFactor = sampleSize.width / (float)decoder->image->width;
             } else {
-                *error = [[NSError alloc] initWithDomain:@"AVIF"
-                                                    code:500
-                                                userInfo:@{ NSLocalizedDescriptionKey: @"Input stream signalled unknown error" }];
+                resizeFactor = sampleSize.height / (float)decoder->image->width;
             }
-            [inputStream close];
+
+            if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor,
+                                (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT,
+                                (uint32_t) maxContentSize, &decoder->diag)) {
+                return nil;
+            }
+        }
+
+        auto xForm = [[AVIFImageXForm alloc] init];
+        auto image = [xForm form:decoder.get() scale:scale];
+
+        if (!image) {
+            *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Decoding AVIF has failed" }];
             return nil;
         }
-    }
-    [inputStream close];
-    std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
 
-    avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
-    
-    // Disable strict mode to keep some AVIF image compatible
-    decoder->strictFlags = AVIF_STRICT_DISABLED;
-    decoder->ignoreXMP = true;
-    decoder->ignoreExif = true;
-    avifResult decodeResult = avifDecoderParse(decoder.get());
-    if (decodeResult != AVIF_RESULT_OK) {
-        NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
+        return image;
+    } catch (std::bad_alloc &err) {
         *error = [[NSError alloc] initWithDomain:@"AVIF"
-                                            code:500
-                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(decodeResult)] }];
+                                  code:500
+                                  userInfo:@{ NSLocalizedDescriptionKey:
+                                                  [NSString stringWithFormat:@"Memory corrupting while decoding: %s", err.what()] }];
         return nil;
     }
-    // Static image
-    avifResult nextImageResult = avifDecoderNextImage(decoder.get());
-    if (nextImageResult != AVIF_RESULT_OK) {
-        NSLog(@"Failed to decode image: %s", avifResultToString(nextImageResult));
-        *error = [[NSError alloc] initWithDomain:@"AVIF"
-                                            code:500
-                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(nextImageResult)] }];
-        return nil;
-    }
-    
-    if (!CGSizeEqualToSize(CGSizeZero, sampleSize)) {
-        
-        float imageAspectRatio = (float)decoder->image->width / (float)decoder->image->height;
-        float canvasRatio = sampleSize.width / sampleSize.height;
-        
-        float resizeFactor = 1.0f;
-        
-        if (imageAspectRatio > canvasRatio) {
-            resizeFactor = sampleSize.width / (float)decoder->image->width;
-        } else {
-            resizeFactor = sampleSize.height / (float)decoder->image->width;
-        }
-        
-        if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor,
-                            (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT,
-                            (uint32_t) maxContentSize, &decoder->diag)) {
-            return nil;
-        }
-    }
-
-    auto xForm = [[AVIFImageXForm alloc] init];
-    auto image = [xForm form:decoder.get() scale:scale];
-
-    if (!image) {
-        *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Decoding AVIF has failed" }];
-        return nil;
-    }
-
-    return image;
 }
 
 @end

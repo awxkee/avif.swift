@@ -27,8 +27,8 @@
 #define Rgb1010102Converter_h
 
 @interface Rgb1010102Converter : NSObject
-+(bool)F16ToRGBA1010102:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(nonnull int*)stride width:(int)width height:(int)height;
-+(bool)F16ToU16:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height;
++(bool)F16ToRGBA1010102:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(nonnull int*)stride width:(int)width height:(int)height components:(int)components;
++(bool)F16ToU16:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height components:(int)components;
 @end
 
 #endif /* Rgb1010102Converter_h */

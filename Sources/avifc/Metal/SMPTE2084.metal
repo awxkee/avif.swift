@@ -48,6 +48,18 @@ float transferBt2020(float c) {
     return c;
 }
 
+constant float betaRec2020 = 0.018053968510807f;
+constant float alphaRec2020 = 1.09929682680944f;
+
+float bt2020GammaCorrection(float linear) {
+    if (0 <= betaRec2020 && linear < betaRec2020) {
+        return 4.5 * linear;
+    } else if (betaRec2020 <= linear && linear < 1) {
+        return alphaRec2020 * pow(linear, 0.45) - (alphaRec2020 - 1);
+    }
+    return linear;
+}
+
 kernel void SMPTE2084(texture2d<float, access::read_write> texture [[texture(0)]],
                       const device int* depth [[buffer(0)]],
                       uint2 gid [[thread_position_in_grid]])
@@ -62,28 +74,21 @@ kernel void SMPTE2084(texture2d<float, access::read_write> texture [[texture(0)]
     float c3 = (2392.0 / 4096.0) * 32.0;
     float4 p = pow(max(color, float4(0.0)), 1.0 / m2);
     float4 denom = pow(max(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1);
-    color = denom * 10000.0 / 180;
+    color = float4(float3(denom * 10000.0 / 203.0f), 1.0);
+
+    const float Ld = 1000.0f / 203.0f;
+    float a = 1.0f / (Ld*Ld);
+    float b1 = 1.f / 1.0f;
+
+    float maximum = max(max(color.r, color.g), color.b);
+    if (maximum > 0) {
+        float shScale = (1.f + a * maximum) / (1.f + b1 * maximum);
+        color *= shScale;
+    }
+
     color.a = originalColor.a;
 
     texture.write(color, gid);
-}
-
-float HDRLumaToSDR(float hdrLuma) {
-    float lHDR = 1000; // Peak HDR luma
-    float lSDR = 100; // Peak SDR luma
-    float pHDR = 1 + 32*pow(lHDR/10000, 1 / 2.4);
-    float Yp = log(1 + (pHDR - 1) * hdrLuma) / log(pHDR);
-    float Yc = 0;
-    if (Yp >= 0 && Yp <= 0.7399) {
-        Yc = 1.0770 * Yp;
-    } else if (Yp > 0.7399 && Yp <= 0.9909) {
-        Yc = -1.1510*pow(Yp, 2) + (2.7811 * Yp) - 0.6302;
-    } else {
-        Yc = 0.5 * Yp + 0.5;
-    }
-    float pSDR = 1 + 32*pow(lSDR/10000, 1/2.4);
-    float Ysdr = (pow(pSDR, Yc) - 1) / (pSDR - 1);
-    return Ysdr;
 }
 
 kernel void SMPTE2084U16(texture2d<ushort, access::read_write> texture [[texture(0)]],
@@ -103,9 +108,20 @@ kernel void SMPTE2084U16(texture2d<ushort, access::read_write> texture [[texture
     float c3 = (2392.0 / 4096.0) * 32.0;
     float4 p = pow(max(color, float4(0.0)), 1.0 / m2);
     float4 denom = pow(max(p - c1, 0.0) / (c2 - c3 * p), 1.0 / m1);
-    color = clamp(denom * 10000.0 / 180, 0.0, 1.0);
+    color = float4(float3(denom * 10000.0 / 80), 1.0);
+
+    const float Ld = 1000.0f / 203.0f;
+    float a = 1.0f / (Ld*Ld);
+    float b1 = 1.f / 1.0f;
+
+    float maximum = max(max(color.r, color.g), color.b);
+    if (maximum > 0) {
+        float shScale = (1.f + a * maximum) / (1.f + b1 * maximum);
+        color *= shScale;
+    }
+
     color.a = originalColor.a;
-    float4 outColorF = color * maxColors;
+    float4 outColorF = clamp(color * maxColors, 0, maxColors);
     ushort4 outColor = ushort4(outColorF);
 
     texture.write(outColor, gid);

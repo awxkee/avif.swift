@@ -26,8 +26,15 @@
 #ifndef PerceptualQuantinizer_h
 #define PerceptualQuantinizer_h
 
+enum PQGammaCorrection {
+    Linear, Rec2020, DisplayP3
+};
+
 @interface PerceptualQuantinizer : NSObject
-+(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half;
++(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width
+        height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
+        primaries:(nonnull float*)primaries components:(int)components
+        gammaCorrection:(PQGammaCorrection)gammaCorrection;
 @end
 
 #endif /* PerceptualQuantinizer_h */

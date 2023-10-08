@@ -27,7 +27,7 @@
 #define RgbTransfer_h
 
 @interface RgbTransfer : NSObject
-+(bool)CopyBuffer:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height pixelSize:(int)pixelSize;
++(bool)CopyBuffer:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height pixelSize:(int)pixelSize components:(int)components;
 @end
 
 

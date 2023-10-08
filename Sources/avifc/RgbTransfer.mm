@@ -29,17 +29,17 @@
 
 @implementation RgbTransfer
 
-+(bool)CopyBuffer:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height pixelSize:(int)pixelSize {
++(bool)CopyBuffer:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height pixelSize:(int)pixelSize components:(int)components {
     vImage_Buffer srcBuffer = {
         .data = (void*)src,
-        .width = static_cast<vImagePixelCount>(width * 4),
+        .width = static_cast<vImagePixelCount>(width * components),
         .height = static_cast<vImagePixelCount>(height),
         .rowBytes = static_cast<size_t>(stride)
     };
 
     vImage_Buffer dstBuffer = {
         .data = dst,
-        .width = static_cast<vImagePixelCount>(width * 4),
+        .width = static_cast<vImagePixelCount>(width * components),
         .height = static_cast<vImagePixelCount>(height),
         .rowBytes = static_cast<size_t>(stride)
     };

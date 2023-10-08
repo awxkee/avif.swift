@@ -41,51 +41,29 @@
 #include <arm_neon.h>
 #endif
 
-uint as_uint(const float x) {
-    return *(uint *) &x;
-}
+#import "NEMath.h"
 
-float as_float(const uint x) {
-    return *(float *) &x;
-}
+#import "Colorspace.h"
+#import "Rec2408ToneMapper.hpp"
+#import "half.hpp"
 
-uint16_t float_to_half(
-                       const float x) { // IEEE-754 16-bit floating-point format (without infinity): 1-5-10, exp-15, +-131008.0, +-6.1035156E-5, +-5.9604645E-8, 3.311 digits
-    const uint b =
-    as_uint(x) + 0x00001000; // round-to-nearest-even: add last bit after truncated mantissa
-    const uint e = (b & 0x7F800000) >> 23; // exponent
-    const uint m = b &
-    0x007FFFFF; // mantissa; in line below: 0x007FF000 = 0x00800000-0x00001000 = decimal indicator flag - initial rounding
-    return (b & 0x80000000) >> 16 | (e > 112) * ((((e - 112) << 10) & 0x7C00) | m >> 13) |
-    ((e < 113) & (e > 101)) * ((((0x007FF000 + m) >> (125 - e)) + 1) >> 1) |
-    (e > 143) * 0x7FFF; // sign : normalized : denormalized : saturate
-}
+using namespace std;
+using namespace half_float;
 
-float half_to_float(
-                    const uint16_t x) { // IEEE-754 16-bit floating-point format (without infinity): 1-5-10, exp-15, +-131008.0, +-6.1035156E-5, +-5.9604645E-8, 3.311 digits
-    const uint e = (x & 0x7C00) >> 10; // exponent
-    const uint m = (x & 0x03FF) << 13; // mantissa
-    const uint v = as_uint((float) m)
-    >> 23; // evil log2 bit hack to count leading zeros in denormalized format
-    return as_float((x & 0x8000) << 16 | (e != 0) * ((e + 112) << 23 | m) | ((e == 0) & (m != 0)) *
-                    ((v - 37) << 23 |
-                     ((m << (150 - v)) &
-                      0x007FE000))); // sign : normalized : denormalized
-}
+float sdrReferencePoint = 203.0f;
 
-float whitePoint = 180.0f;
-
-float ToLinearPQ(float v) {
-    v = std::max(0.0f, v);
+inline float ToLinearPQ(float v) {
+    float o = v;
+    v = max(0.0f, v);
     float m1 = (2610.0f / 4096.0f) / 4.0f;
     float m2 = (2523.0f / 4096.0f) * 128.0f;
     float c1 = 3424.0f / 4096.0f;
     float c2 = (2413.0f / 4096.0f) * 32.0f;
     float c3 = (2392.0f / 4096.0f) * 32.0f;
     float p = pow(v, 1.0f / m2);
-    v = powf(std::max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
-    v *= 10000.0f / whitePoint;
-    return v;
+    v = powf(max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
+    v *= 10000.0f / sdrReferencePoint;
+    return copysign(v, o);
 }
 
 struct TriStim {
@@ -94,166 +72,123 @@ struct TriStim {
     float b;
 };
 
-TriStim ClipToWhite(TriStim* c);
-
-float Luma(TriStim &stim) {
-    return stim.r * 0.2627f + stim.g * 0.6780f + stim.b * 0.0593f;
+inline float dciP3PQGammaCorrection(float linear) {
+    return pow(linear, 1.0f / 2.6f);
 }
 
-float Luma(float r, float g, float b) {
-    return r * 0.2627f + g * 0.6780f + b * 0.0593f;
+constexpr float betaRec2020 = 0.018053968510807f;
+constexpr float alphaRec2020 = 1.09929682680944f;
+
+TriStim ClipToWhite(TriStim* c);
+
+inline float Luma(TriStim &stim, const float* primaries) {
+    return stim.r * primaries[0] + stim.g * primaries[1] + stim.b * primaries[2];
+}
+
+inline TriStim ClipToWhite(TriStim* c, const float* primaries) {
+    float maximum = max(max(c->r, c->g), c->b);
+    if (maximum > 1.0f) {
+        float l = Luma(*c, primaries);
+        c->r *= 1.0f / maximum;
+        c->g *= 1.0f / maximum;
+        c->b *= 1.0f / maximum;
+        TriStim white = { 1.0f, 1.0f, 1.0f };
+        float wScale = (1.0f - 1.0f / maximum) * l / Luma(white, primaries);
+        white = { 1.0f*wScale, 1.0f*wScale, 1.0f*wScale };
+        TriStim black = {0.0f, 0.0f, 0.0f };
+        c->r += white.r;
+        c->g += white.g;
+        c->b += white.b;
+    }
+    return *c;
+}
+
+inline float LinearRec2020ToRec2020(float linear) {
+    if (0 <= betaRec2020 && linear < betaRec2020) {
+        return 4.5f * linear;
+    } else if (betaRec2020 <= linear && linear < 1) {
+        return alphaRec2020 * powf(linear, 0.45f) - (alphaRec2020 - 1.0f);
+    } else {
+        return linear;
+    }
+}
+
+inline static float ToLinearToneMap(float v) {
+    v = std::max(0.0f, v);
+    return std::min(2.3f * pow(v, 2.8f), v / 5.0f + 0.8f);
+}
+
+float Luma(float r, float g, float b, const float* primaries) {
+    return r * primaries[0] + g * primaries[1] + b * primaries[2];
 }
 
 float clampf(float value, float min, float max) {
     return fmin(fmax(value, min), max);
 }
 
-void TransferROW_U16HFloats(uint16_t *data) {
-    auto r = (float) half_to_float(data[0]);
-    auto g = (float) half_to_float(data[1]);
-    auto b = (float) half_to_float(data[2]);
+void ToneMap(TriStim& stim, float luma, float* primaries) {
+    if (luma < 1.0f) {
+        return;
+    }
+
+    const float contentMaxLuma = 1.0f;
+}
+
+const auto sourceColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
+const auto destinationColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+const auto info = CGColorConversionInfoCreate(sourceColorSpace, destinationColorSpace);
+
+float SDRLuma(const float L, const float Lc, const float Ld) {
+    float a = (Ld / Lc*Lc);
+    float b = (1.0f / Ld);
+    return L * (1 + a*L) / (1 + b*L);
+}
+
+float LinearSRGBToSRGB(float linearValue) {
+    if (linearValue <= 0.0031308) {
+        return 12.92f * linearValue;
+    } else {
+        return 1.055f * std::pow(linearValue, 1.0f / 2.4f) - 0.055f;
+    }
+}
+
+inline half loadHalf(uint16_t t) {
+    half f;
+    f.data_ = t;
+    return f;
+}
+
+void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, Rec2408ToneMapper* toneMapper) {
+    auto r = (float) loadHalf(data[0]);
+    auto g = (float) loadHalf(data[1]);
+    auto b = (float) loadHalf(data[2]);
     TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-    data[0] = float_to_half((float) smpte.r);
-    data[1] = float_to_half((float) smpte.g);
-    data[2] = float_to_half((float) smpte.b);
+
+    r = smpte.r;
+    g = smpte.g;
+    b = smpte.b;
+
+    toneMapper->toneMap(r, g, b);
+
+    if (gammaCorrection == Rec2020) {
+        data[0] = half(clamp(LinearRec2020ToRec2020(r), 0.0f, 1.0f)).data_;
+        data[1] = half(clamp(LinearRec2020ToRec2020(g), 0.0f, 1.0f)).data_;
+        data[2] = half(clamp(LinearRec2020ToRec2020(b), 0.0f, 1.0f)).data_;
+    } else if (gammaCorrection == DisplayP3) {
+        data[0] = half(clamp(LinearSRGBToSRGB(r), 0.0f, 1.0f)).data_;
+        data[1] = half(clamp(LinearSRGBToSRGB(g), 0.0f, 1.0f)).data_;
+        data[2] = half(clamp(LinearSRGBToSRGB(b), 0.0f, 1.0f)).data_;
+    } else {
+        data[0] = half(clamp(r, 0.0f, 1.0f)).data_;
+        data[1] = half(clamp(g, 0.0f, 1.0f)).data_;
+        data[2] = half(clamp(b, 0.0f, 1.0f)).data_;
+    }
 }
 
 #if __arm64__
 
-/* Logarithm polynomial coefficients */
-const std::array<float32x4_t, 8> log_tab =
-{
-    {
-        vdupq_n_f32(-2.29561495781f),
-        vdupq_n_f32(-2.47071170807f),
-        vdupq_n_f32(-5.68692588806f),
-        vdupq_n_f32(-0.165253549814f),
-        vdupq_n_f32(5.17591238022f),
-        vdupq_n_f32(0.844007015228f),
-        vdupq_n_f32(4.58445882797f),
-        vdupq_n_f32(0.0141278216615f),
-    }
-};
-
-static const uint32_t exp_f32_coeff[] =
-{
-    0x3f7ffff6, // x^1: 0x1.ffffecp-1f
-    0x3efffedb, // x^2: 0x1.fffdb6p-2f
-    0x3e2aaf33, // x^3: 0x1.555e66p-3f
-    0x3d2b9f17, // x^4: 0x1.573e2ep-5f
-    0x3c072010, // x^5: 0x1.0e4020p-7f
-};
-
-inline float32x4_t vtaylor_polyq_f32(float32x4_t x, const std::array<float32x4_t, 8> &coeffs)
-{
-    float32x4_t A   = vmlaq_f32(coeffs[0], coeffs[4], x);
-    float32x4_t B   = vmlaq_f32(coeffs[2], coeffs[6], x);
-    float32x4_t C   = vmlaq_f32(coeffs[1], coeffs[5], x);
-    float32x4_t D   = vmlaq_f32(coeffs[3], coeffs[7], x);
-    float32x4_t x2  = vmulq_f32(x, x);
-    float32x4_t x4  = vmulq_f32(x2, x2);
-    float32x4_t res = vmlaq_f32(vmlaq_f32(A, B, x2), vmlaq_f32(C, D, x2), x4);
-    return res;
-}
-
-inline float32x4_t prefer_vfmaq_f32(float32x4_t a, float32x4_t b, float32x4_t c)
-{
-#if __ARM_FEATURE_FMA
-    return vfmaq_f32(a, b, c);
-#else // __ARM_FEATURE_FMA
-    return vmlaq_f32(a, b, c);
-#endif // __ARM_FEATURE_FMA
-}
-
-inline float32x4_t vexpq_f32(float32x4_t x)
-{
-    const auto c1 = vreinterpretq_f32_u32(vdupq_n_u32(exp_f32_coeff[0]));
-    const auto c2 = vreinterpretq_f32_u32(vdupq_n_u32(exp_f32_coeff[1]));
-    const auto c3 = vreinterpretq_f32_u32(vdupq_n_u32(exp_f32_coeff[2]));
-    const auto c4 = vreinterpretq_f32_u32(vdupq_n_u32(exp_f32_coeff[3]));
-    const auto c5 = vreinterpretq_f32_u32(vdupq_n_u32(exp_f32_coeff[4]));
-
-    const auto shift      = vreinterpretq_f32_u32(vdupq_n_u32(0x4b00007f)); // 2^23 + 127 = 0x1.0000fep23f
-    const auto inv_ln2    = vreinterpretq_f32_u32(vdupq_n_u32(0x3fb8aa3b)); // 1 / ln(2) = 0x1.715476p+0f
-    const auto neg_ln2_hi = vreinterpretq_f32_u32(vdupq_n_u32(0xbf317200)); // -ln(2) from bits  -1 to -19: -0x1.62e400p-1f
-    const auto neg_ln2_lo = vreinterpretq_f32_u32(vdupq_n_u32(0xb5bfbe8e)); // -ln(2) from bits -20 to -42: -0x1.7f7d1cp-20f
-
-    const auto inf       = vdupq_n_f32(std::numeric_limits<float>::infinity());
-    const auto max_input = vdupq_n_f32(88.37f); // Approximately ln(2^127.5)
-    const auto zero      = vdupq_n_f32(0.f);
-    const auto min_input = vdupq_n_f32(-86.64f); // Approximately ln(2^-125)
-
-    // Range reduction:
-    //   e^x = 2^n * e^r
-    // where:
-    //   n = floor(x / ln(2))
-    //   r = x - n * ln(2)
-    //
-    // By adding x / ln(2) with 2^23 + 127 (shift):
-    //   * As FP32 fraction part only has 23-bits, the addition of 2^23 + 127 forces decimal part
-    //     of x / ln(2) out of the result. The integer part of x / ln(2) (i.e. n) + 127 will occupy
-    //     the whole fraction part of z in FP32 format.
-    //     Subtracting 2^23 + 127 (shift) from z will result in the integer part of x / ln(2)
-    //     (i.e. n) because the decimal part has been pushed out and lost.
-    //   * The addition of 127 makes the FP32 fraction part of z ready to be used as the exponent
-    //     in FP32 format. Left shifting z by 23 bits will result in 2^n.
-    const auto z     = prefer_vfmaq_f32(shift, x, inv_ln2);
-    const auto n     = z - shift;
-    const auto scale = vreinterpretq_f32_u32(vreinterpretq_u32_f32(z) << 23); // 2^n
-
-    // The calculation of n * ln(2) is done using 2 steps to achieve accuracy beyond FP32.
-    // This outperforms longer Taylor series (3-4 tabs) both in term of accuracy and performance.
-    const auto r_hi = prefer_vfmaq_f32(x, n, neg_ln2_hi);
-    const auto r    = prefer_vfmaq_f32(r_hi, n, neg_ln2_lo);
-
-    // Compute the truncated Taylor series of e^r.
-    //   poly = scale * (1 + c1 * r + c2 * r^2 + c3 * r^3 + c4 * r^4 + c5 * r^5)
-    const auto r2 = r * r;
-
-    const auto p1     = c1 * r;
-    const auto p23    = prefer_vfmaq_f32(c2, c3, r);
-    const auto p45    = prefer_vfmaq_f32(c4, c5, r);
-    const auto p2345  = prefer_vfmaq_f32(p23, p45, r2);
-    const auto p12345 = prefer_vfmaq_f32(p1, p2345, r2);
-
-    auto poly = prefer_vfmaq_f32(scale, p12345, scale);
-
-    // Handle underflow and overflow.
-    poly = vbslq_f32(vcltq_f32(x, min_input), zero, poly);
-    poly = vbslq_f32(vcgtq_f32(x, max_input), inf, poly);
-
-    return poly;
-}
-
-inline float32x4_t vlogq_f32(float32x4_t x)
-{
-    static const int32x4_t   CONST_127 = vdupq_n_s32(127);           // 127
-    static const float32x4_t CONST_LN2 = vdupq_n_f32(0.6931471805f); // ln(2)
-
-    // Extract exponent
-    int32x4_t   m   = vsubq_s32(vreinterpretq_s32_u32(vshrq_n_u32(vreinterpretq_u32_f32(x), 23)), CONST_127);
-    float32x4_t val = vreinterpretq_f32_s32(vsubq_s32(vreinterpretq_s32_f32(x), vshlq_n_s32(m, 23)));
-
-    // Polynomial Approximation
-    float32x4_t poly = vtaylor_polyq_f32(val, log_tab);
-
-    // Reconstruct
-    poly = vmlaq_f32(poly, vcvtq_f32_s32(m), CONST_LN2);
-
-    return poly;
-}
-
-inline float32x4_t vpowq_f32(float32x4_t val, float32x4_t n)
-{
-    return vexpq_f32(vmulq_f32(n, vlogq_f32(val)));
-}
-
-inline float32x4_t vpowq_f32(float32x4_t t, float power) {
-    return vpowq_f32(t, vdupq_n_f32(power));
-}
-
 // Constants
-const static float32x4_t zero = vdupq_n_f32(0.0f);
+const static float32x4_t zeros = vdupq_n_f32(0);
 const static float m1 = (2610.0f / 4096.0f) / 4.0f;
 const static float m2 = (2523.0f / 4096.0f) * 128.0f;
 const static float32x4_t c1 = vdupq_n_f32(3424.0f / 4096.0f);
@@ -262,187 +197,460 @@ const static float32x4_t c3 = vdupq_n_f32((2392.0f / 4096.0f) * 32.0f);
 const static float m2Power = 1.0f / m2;
 const static float m1Power = 1.0f / m1;
 
-const static float lumaScale = 10000.0f / whitePoint;
+const static float lumaScale = 10000.0f / sdrReferencePoint;
 
-inline float32x4_t ToLinearPQ(float32x4_t v) {
-
-    /*
-     *  float p = pow(v, 1.0f / m2);
-     v = powf(std::max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
-     v *= 10000.0f / 650.0f;
-     */
-
-    // Calculate p and intermediate values
-    float32x4_t p = vpowq_f32(vmaxq_f32(v, zero), m2Power);
-    // Calculate v
-    return vmulq_n_f32(vpowq_f32(vdivq_f32(vmaxq_f32(vsubq_f32(p, c1), zero), vmlsq_f32(c2, c3, p)), m1Power),
-                       lumaScale);
+__attribute__((always_inline))
+inline float32x4_t ToLinearPQ(const float32x4_t v) {
+    const float32x4_t rv = vmaxq_f32(v, zeros);
+    float32x4_t p = vpowq_f32(rv, m2Power);
+    return vcopysignq_f32(vmulq_n_f32(vpowq_f32(vdivq_f32(vmaxq_f32(vsubq_f32(p, c1), zeros), vmlsq_f32(c2, c3, p)), m1Power),
+                                      lumaScale), rv);
 }
 
 const static float32x4_t linearM = vdupq_n_f32(2.3f);
 const static float32x4_t linearM1 = vdupq_n_f32(0.8f);
 const static float32x4_t linearM2 = vdupq_n_f32(0.2f);
 
-inline float32x4_t ToLinearToneMap(float32x4_t v) {
-    // Apply the function element-wise to the vector
-    float32x4_t max_zero = vmaxq_f32(v, zero);
+__attribute__((always_inline))
+inline float32x4_t LinearRec2020ToRec2020(const float32x4_t linear) {
 
-    return vminq_f32(vmulq_f32(vpowq_f32(max_zero, 2.8f), linearM), vmlaq_f32(max_zero, linearM1, linearM2));
+    uint32x4_t mask = vcgtq_f32(linear, vdupq_n_f32(betaRec2020));
+    uint32x4_t maskHigh = vcltq_f32(linear, vdupq_n_f32(betaRec2020));
+
+    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
+    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+
+    low = vmulq_n_f32(low, 4.5f);
+    constexpr float fk = alphaRec2020 - 1;
+    high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), alphaRec2020), vdupq_n_f32(fk));
+
+    return vaddq_f32(low, high);
 }
 
-static const float32x4_t lumaCoefficients = {0.2627f, 0.6780f, 0.0593f, 0.0f}; // Weighting coefficients
-
-inline float NeonLuma(float32x4_t vector) {
-    // Multiply the RGB channels by the coefficients
-    float32x4_t luma = vmulq_f32(vector, lumaCoefficients);
-    float32x2_t sum_halves = vadd_f32(vget_high_f32(luma), vget_low_f32(luma));
-
-    // Extract the result as a float
-    float32_t result = vget_lane_f32(sum_halves, 0);
-    return result;
+__attribute__((always_inline))
+inline float32x4_t dcpi3GammaCorrection(float32x4_t linear) {
+    return vpowq_f32(linear, 1.0f/2.6f);
 }
 
-float32x4_t white = {1.0f, 1.0f, 1.0f, 1.0f};
-const static float LumaWhite = NeonLuma(white);
-const static float32x4_t LumaDup = vdupq_n_f32(LumaWhite);
+__attribute__((always_inline))
+inline void SetPixelsRGB(float16x4_t rgb, uint16_t *vector, int components) {
+    uint16x4_t t = vreinterpret_u16_f16(rgb);
+    vst1_u16(vector, t);
+}
 
-inline float32x4_t ClipToWhite(float32x4_t v) {
-    float max_value = vmaxnmvq_f32(v);
+__attribute__((always_inline))
+inline void SetPixelsRGBU8(const float32x4_t rgb, uint8_t *vector, const float32x4_t maxColors) {
+    const float32x4_t zeros = vdupq_n_f32(0);
+    const float32x4_t v = vminq_f32(vmaxq_f32(vrndq_f32(vmulq_f32(rgb, maxColors)), zeros), maxColors);
+}
 
-    if (max_value > 1.0f) {
-        float scaler = 1.0f / max_value;
-        float luma = NeonLuma(v);
-        float32x4_t white = {1.0f, 1.0f, 1.0f, 1.0f};
-        float dx = 1.0f - scaler;
-        white = vdivq_f32(vmulq_n_f32(vmulq_n_f32(white, dx), luma), LumaDup);
-        //        float32x4_t black = {0.0f, 0.0f, 0.0f, 0.0f};
-        v = vaddq_f32(vmulq_n_f32(v, scaler), white);
-    }
+__attribute__((always_inline))
+inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxColors) {
+    const float32x4_t zeros = vdupq_n_f32(0);
+    const float32x4_t v = vminq_f32(vmaxq_f32(vrndq_f32(vmulq_f32(rgb, maxColors)), zeros), maxColors);
     return v;
 }
 
-inline void SetPixelsRGB(float16x4_t rgb, uint16_t *vector) {
-    uint16x4_t t = vreinterpret_u16_f16(rgb);
-    vector[0] = vget_lane_u16(t, 0);
-    vector[1] = vget_lane_u16(t, 1);
-    vector[2] = vget_lane_u16(t, 2);
+float32x4_t LinearSRGBToSRGB(float32x4_t linear) {
+    const float32x4_t level = vdupq_n_f32(0.0031308);
+
+    uint32x4_t mask = vcgtq_f32(linear, level);
+    uint32x4_t maskHigh = vcltq_f32(linear, level);
+
+    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
+    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+    low = vmulq_n_f32(low, 12.92f);
+
+    high = vsubq_f32(vmulq_n_f32(vpowq_f32(linear, 1.0f/2.4f), 1.055f), vdupq_n_f32(0.055f));
+    float32x4_t result = vaddq_f32(low, high);
+    return result;
 }
 
-inline void SetPixelsRGBU8(float32x4_t rgb, uint8_t *vector, float maxColors) {
-    vector[0] = (uint8_t) clampf((rgb[0] * maxColors), 0, maxColors);
-    vector[1] = (uint8_t) clampf((rgb[1] * maxColors), 0, maxColors);
-    vector[2] = (uint8_t) clampf((rgb[2] * maxColors), 0, maxColors);
-}
+__attribute__((always_inline))
+inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan, 
+                              float32x4_t bChan,
+                              PQGammaCorrection gammaCorrection,
+                              Rec2408ToneMapper* toneMapper) {
+    float32x4_t pqR = ToLinearPQ(rChan);
+    float32x4_t pqG = ToLinearPQ(gChan);
+    float32x4_t pqB = ToLinearPQ(bChan);
 
-inline float32x4_t Transfer(float32x4_t rgb) {
-    float32x4_t pq = ToLinearPQ(rgb);
-    return pq;
+    float32x4x4_t m = {
+        pqR, pqG, pqB, vdupq_n_f32(0.0f)
+    };
+    m = MatTransponseQF32(m);
+
+    float32x4x4_t r = toneMapper->toneMap(m);
+
+    if (gammaCorrection == Rec2020) {
+        r.val[0] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[0]), 0.0f, 1.0f);
+        r.val[1] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[1]), 0.0f, 1.0f);
+        r.val[2] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[2]), 0.0f, 1.0f);
+        r.val[3] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[3]), 0.0f, 1.0f);
+    } else if (gammaCorrection == DisplayP3) {
+        r.val[0] = vclampq_n_f32(LinearSRGBToSRGB(r.val[0]), 0.0f, 1.0f);
+        r.val[1] = vclampq_n_f32(LinearSRGBToSRGB(r.val[1]), 0.0f, 1.0f);
+        r.val[2] = vclampq_n_f32(LinearSRGBToSRGB(r.val[2]), 0.0f, 1.0f);
+        r.val[3] = vclampq_n_f32(LinearSRGBToSRGB(r.val[3]), 0.0f, 1.0f);
+    } else {
+        r.val[0] = vclampq_n_f32(r.val[0], 0.0f, 1.0f);
+        r.val[1] = vclampq_n_f32(r.val[1], 0.0f, 1.0f);
+        r.val[2] = vclampq_n_f32(r.val[2], 0.0f, 1.0f);
+        r.val[3] = vclampq_n_f32(r.val[3], 0.0f, 1.0f);
+    }
+
+    return r;
 }
 
 #endif
 
-void TransferROW_U16(uint16_t *data, float maxColors) {
-    auto r = (float) data[0] / (float) maxColors;
-    auto g = (float) data[1] / (float) maxColors;
-    auto b = (float) data[2] / (float) maxColors;
-    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-    data[0] = (uint16_t) (float) smpte.r * maxColors;
-    data[1] = (uint16_t) (float) smpte.g * maxColors;
-    data[2] = (uint16_t) (float) smpte.b * maxColors;
+void TransferROW_U16(uint16_t *data, float maxColors, PQGammaCorrection gammaCorrection, float* primaries) {
+//    auto r = (float) data[0];
+//    auto g = (float) data[1]);
+//    auto b = (float) data[2];
+//    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b), primaries);
+//    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+//    float pqLuma = Luma(smpte, primaries);
+//    float scale = luma / pqLuma;
+//    data[0] = float_to_half((float) smpte.r * scale);
+//    data[1] = float_to_half((float) smpte.g * scale);
+//    data[2] = float_to_half((float) smpte.b * scale);
 }
 
-void TransferROW_U8(uint8_t *data, float maxColors) {
+void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorrection, Rec2408ToneMapper* toneMapper) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
     TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-    data[0] = (uint8_t) clampf((float) smpte.r * maxColors, 0, maxColors);
-    data[1] = (uint8_t) clampf((float) smpte.g * maxColors, 0, maxColors);
-    data[2] = (uint8_t) clampf((float) smpte.b * maxColors, 0, maxColors);
+
+    r = smpte.r;
+    g = smpte.g;
+    b = smpte.b;
+
+    toneMapper->toneMap(r, g, b);
+
+    if (gammaCorrection == Rec2020) {
+        r = LinearRec2020ToRec2020(r);
+        g = LinearRec2020ToRec2020(g);
+        b = LinearRec2020ToRec2020(b);
+    } else if (gammaCorrection == DisplayP3) {
+        r = LinearSRGBToSRGB(r);
+        g = LinearSRGBToSRGB(g);
+        b = LinearSRGBToSRGB(b);
+    }
+
+    data[0] = (uint8_t) clamp((float) round(r * maxColors), 0.0f, maxColors);
+    data[1] = (uint8_t) clamp((float) round(g * maxColors), 0.0f, maxColors);
+    data[2] = (uint8_t) clamp((float) round(b * maxColors), 0.0f, maxColors);
 }
 
 @implementation PerceptualQuantinizer : NSObject
 
 #if __arm64__
 
-+(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth {
++(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth primaries:(float*)primaries
+                 space:(PQGammaCorrection)space components:(int)components {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
-    float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
+    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
+
         auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
         int x;
-        for (x = 0; x + 2 < width; x += 2) {
-            float16x8_t rgbVector = vld1q_f16(reinterpret_cast<const __fp16 *>(ptr16));
+        for (x = 0; x + 8 < width; x += 8) {
+            if (components == 4) {
+                float16x8x4_t rgbVector = vld4q_f16(reinterpret_cast<const float16_t *>(ptr16));
 
-            float32x4_t rgbChannelsLow = vmulq_f32(vcvt_f32_f16(vget_low_f16(rgbVector)), mask);
-            float32x4_t rgbChannelsHigh = vmulq_f32(vcvt_f32_f16(vget_high_f16(rgbVector)), mask);
-            
-            float32x4_t low = Transfer(rgbChannelsLow);
-            float16x4_t lowHalf = vcvt_f16_f32(low);
-            SetPixelsRGB(lowHalf, ptr16);
+                float32x4_t rChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[0]));
+                float32x4_t rChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[0]));
+                float32x4_t gChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[1]));
+                float32x4_t gChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[1]));
+                float32x4_t bChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[2]));
+                float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
+                float16x8_t aChannels = rgbVector.val[3];
 
-            float32x4_t high = Transfer(rgbChannelsHigh);
-            float16x4_t highHalf = vcvt_f16_f32(high);
-            SetPixelsRGB(highHalf, ptr16 + 4);
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper);
 
-            ptr16 += 8;
+                low = MatTransponseQF32(low);
+
+                float16x4_t rw1 = vcvt_f16_f32(low.val[0]);
+                float16x4_t rw2 = vcvt_f16_f32(low.val[1]);
+                float16x4_t rw3 = vcvt_f16_f32(low.val[2]);
+
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper);
+                high = MatTransponseQF32(high);
+                float16x4_t rw12 = vcvt_f16_f32(high.val[0]);
+                float16x4_t rw22 = vcvt_f16_f32(high.val[1]);
+                float16x4_t rw32 = vcvt_f16_f32(high.val[2]);
+                float16x8_t finalRow1 = vcombine_f16(rw1, rw12);
+                float16x8_t finalRow2 = vcombine_f16(rw2, rw22);
+                float16x8_t finalRow3 = vcombine_f16(rw3, rw32);
+
+                float16x8x4_t rw = { finalRow1, finalRow2, finalRow3, aChannels };
+                vst4q_f16(reinterpret_cast<float16_t*>(ptr16), rw);
+            } else {
+                float16x8x3_t rgbVector = vld3q_f16(reinterpret_cast<const float16_t *>(ptr16));
+
+                float32x4_t rChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[0]));
+                float32x4_t rChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[0]));
+                float32x4_t gChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[1]));
+                float32x4_t gChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[1]));
+                float32x4_t bChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[2]));
+                float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
+
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper);
+
+                float32x4x4_t m = {
+                    low.val[0], low.val[1], low.val[2], low.val[3]
+                };
+                m = MatTransponseQF32(m);
+
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper);
+
+                float32x4x4_t highM = {
+                    high.val[0], high.val[1], high.val[2], high.val[3]
+                };
+                highM = MatTransponseQF32(highM);
+
+                float16x8_t mergedR = vcombine_f16(vcvt_f16_f32(m.val[0]), vcvt_f16_f32(highM.val[0]));
+                float16x8_t mergedG = vcombine_f16(vcvt_f16_f32(m.val[1]), vcvt_f16_f32(highM.val[1]));
+                float16x8_t mergedB = vcombine_f16(vcvt_f16_f32(m.val[2]), vcvt_f16_f32(highM.val[2]));
+                float16x8x3_t merged = { mergedR, mergedG, mergedB };
+                vst3q_f16(reinterpret_cast<float16_t*>(ptr16), merged);
+            }
+
+            ptr16 += components*8;
         }
 
         for (; x < width; ++x) {
-            TransferROW_U16HFloats(ptr16);
-            ptr16 += 4;
+            TransferROW_U16HFloats(ptr16, space, primaries, toneMapper);
+            ptr16 += components;
         }
     });
+
+    delete toneMapper;
 }
 
-+(void)transferNEONU8:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth {
++(void)transferNEONU8:(nonnull uint8_t*)data
+               stride:(int)stride width:(int)width height:(int)height depth:(int)depth
+            primaries:(float*)primaries space:(PQGammaCorrection)space components:(int)components {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
-    float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
+    const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
 
-    auto maxColors = powf(2, (float) depth) - 1;
-    auto mColors = vdupq_n_f32(maxColors);
+    const auto maxColors = powf(2, (float) depth) - 1;
+    const auto mColors = vdupq_n_f32(maxColors);
+
+    const float colorScale = 1.0f / float((1 << depth) - 1);
+
+    const float32x4_t vMaxColors = vdupq_n_f32(maxColors);
+
+    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
         auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
         int x;
-        for (x = 0; x + 4 < width; x += 4) {
-            uint8x16_t rgbChannels = vld1q_u8(ptr16);
+        int pixels = 16;
+        for (x = 0; x + pixels < width; x += pixels) {
+            if (components == 4) {
+                uint8x16x4_t rgbChannels = vld4q_u8(ptr16);
 
-            uint8x8_t low_data = vget_low_u8(rgbChannels);
-            uint8x8_t high_data = vget_high_u8(rgbChannels);
+                uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
+                uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
+                uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
+                uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
+                uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
+                uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
 
-            uint16x8_t intermediateVector = vmovl_u8(low_data); // Widen to uint16x8_t
+                uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
+                uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
+                uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
+                uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
+                uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
+                uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
 
-            float32x4_t rgbC1 = vmulq_f32(vdivq_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(intermediateVector))), mColors), mask);
-            float32x4_t C1 = Transfer(rgbC1);
-            SetPixelsRGBU8(C1, ptr16, maxColors);
+                float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
+                float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
+                float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-            float32x4_t rgbC2 = vmulq_f32(vdivq_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(intermediateVector))), mColors), mask);
-            float32x4_t C2 = Transfer(rgbC2);
-            SetPixelsRGBU8(C2, ptr16 + 4, maxColors);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedLowLow = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedLowLow = MatTransponseQF32(transposedLowLow);
 
-            uint16x8_t intermediateVectorHigh = vmovl_u8(high_data); // Widen to uint16x8_t
-            float32x4_t rgbC3 = vmulq_f32(vdivq_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(intermediateVectorHigh))), mColors), mask);
-            float32x4_t C3 = Transfer(rgbC3);
-            SetPixelsRGBU8(C3, ptr16 + 8, maxColors);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-            float32x4_t rgbC4 = vmulq_f32(vdivq_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(intermediateVectorHigh))), mColors), mask);
-            float32x4_t C4 = Transfer(rgbC4);
-            SetPixelsRGBU8(C4, ptr16 + 12, maxColors);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedLowHigh = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedLowHigh = MatTransponseQF32(transposedLowHigh);
 
-            ptr16 += 16;
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
+
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedHighLow = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedHighLow = MatTransponseQF32(transposedHighLow);
+
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
+
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedHighHigh = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedHighHigh = MatTransponseQF32(transposedHighHigh);
+
+                uint8x8_t row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[0])),
+                                                            vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[0]))));
+                uint8x8_t row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[0])),
+                                                            vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[0]))));
+                uint8x16_t rowR = vcombine_u8(row1u16, row2u16);
+
+                row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[1])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[1]))));
+                row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[1])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[1]))));
+                uint8x16_t rowG = vcombine_u8(row1u16, row2u16);
+
+                row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[2])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[2]))));
+                row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[2])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[2]))));
+                uint8x16_t rowB = vcombine_u8(row1u16, row2u16);
+                uint8x16x4_t result = {rowR, rowG, rowB, rgbChannels.val[3]};
+                vst4q_u8(ptr16, result);
+            } else {
+                uint8x16x3_t rgbChannels = vld3q_u8(ptr16);
+
+                uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
+                uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
+                uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
+                uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
+                uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
+                uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
+
+                uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
+                uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
+                uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
+                uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
+                uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
+                uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
+
+                float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
+                float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
+                float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
+
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedLowLow = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedLowLow = MatTransponseQF32(transposedLowLow);
+
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
+
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedLowHigh = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedLowHigh = MatTransponseQF32(transposedLowHigh);
+
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
+
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedHighLow = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedHighLow = MatTransponseQF32(transposedHighLow);
+
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
+
+                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                float32x4x4_t transposedHighHigh = {
+                    rw1, rw2, rw3, rw4
+                };
+                transposedHighHigh = MatTransponseQF32(transposedHighHigh);
+
+                uint8x8_t row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[0])),
+                                                            vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[0]))));
+                uint8x8_t row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[0])),
+                                                            vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[0]))));
+                uint8x16_t rowR = vcombine_u8(row1u16, row2u16);
+
+                row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[1])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[1]))));
+                row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[1])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[1]))));
+                uint8x16_t rowG = vcombine_u8(row1u16, row2u16);
+
+                row1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedLowLow.val[2])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedLowHigh.val[2]))));
+                row2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(transposedHighLow.val[2])),
+                                                  vqmovn_u32(vcvtq_u32_f32(transposedHighHigh.val[2]))));
+                uint8x16_t rowB = vcombine_u8(row1u16, row2u16);
+                uint8x16x3_t result = {rowR, rowG, rowB};
+                vst3q_u8(ptr16, result);
+            }
+
+            ptr16 += components*pixels;
         }
 
         for (; x < width; ++x) {
-            TransferROW_U8(ptr16, maxColors);
-            ptr16 += 4;
+            TransferROW_U8(ptr16, maxColors, space, toneMapper);
+            ptr16 += components;
         }
     });
+
+    delete toneMapper;
 }
 #endif
 
@@ -538,22 +746,24 @@ void TransferROW_U8(uint8_t *data, float maxColors) {
 }
 
 +(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height
-            U16:(bool)U16 depth:(int)depth half:(bool)half {
-
+            U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
+     components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-    if ([self transferMetal:data stride:stride width:width height:height U16:U16 depth:depth half:half]) {
-        return;
-    }
 #if __arm64__
     if (U16 && half) {
-        [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height depth:depth];
+        [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
+                        depth:depth primaries:primaries space:gammaCorrection components:components];
+        return;
     }
     if (!U16) {
-        [self transferNEONU8:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height depth:depth];
+        [self transferNEONU8:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
+                       depth:depth primaries:primaries space:gammaCorrection components:components];
+        return;
     }
-    return;
 #endif
     auto maxColors = powf(2, (float) depth) - 1;
+
+    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
@@ -561,19 +771,21 @@ void TransferROW_U8(uint8_t *data, float maxColors) {
             auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
                 if (half) {
-                    TransferROW_U16HFloats(ptr16);
+                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper);
                 } else {
-                    TransferROW_U16(ptr16, maxColors);
+                    TransferROW_U16(ptr16, maxColors, gammaCorrection, primaries);
                 }
-                ptr16 += 4;
+                ptr16 += components;
             }
         } else {
             auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
-                TransferROW_U8(ptr16, maxColors);
-                ptr16 += 4;
+                TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper);
+                ptr16 += components;
             }
         }
     });
+
+    delete toneMapper;
 }
 @end
