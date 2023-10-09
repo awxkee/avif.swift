@@ -17,6 +17,7 @@
 #import <vector>
 #import "AVIFImageXForm.h"
 #import "PerceptualQuantinizer.h"
+#import <thread>
 
 @implementation AVIFDataDecoder {
     avifDecoder *_idec;
@@ -176,6 +177,8 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         decoder->strictFlags = AVIF_STRICT_DISABLED;
         decoder->ignoreXMP = true;
         decoder->ignoreExif = true;
+        int hwThreads = std::thread::hardware_concurrency();
+        decoder->maxThreads = hwThreads;
         avifResult decodeResult = avifDecoderParse(decoder.get());
         if (decodeResult != AVIF_RESULT_OK) {
             NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));

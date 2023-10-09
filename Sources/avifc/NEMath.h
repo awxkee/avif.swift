@@ -203,6 +203,12 @@ static inline float32x4_t vcopysignq_f32(const float32x4_t dst, const float32x4_
      return vbslq_f32(mask, vnegq_f32(dst), dst);
 }
 
+__attribute__((always_inline))
+static inline float vsumq_f32(const float32x4_t v) {
+    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
+    return vget_lane_f32(vpadd_f32(r, r), 0);
+}
+
 #endif
 
 #endif // _cplusplus

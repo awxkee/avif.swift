@@ -72,13 +72,6 @@ struct TriStim {
     float b;
 };
 
-inline float dciP3PQGammaCorrection(float linear) {
-    return pow(linear, 1.0f / 2.6f);
-}
-
-constexpr float betaRec2020 = 0.018053968510807f;
-constexpr float alphaRec2020 = 1.09929682680944f;
-
 TriStim ClipToWhite(TriStim* c);
 
 inline float Luma(TriStim &stim, const float* primaries) {
@@ -101,21 +94,6 @@ inline TriStim ClipToWhite(TriStim* c, const float* primaries) {
         c->b += white.b;
     }
     return *c;
-}
-
-inline float LinearRec2020ToRec2020(float linear) {
-    if (0 <= betaRec2020 && linear < betaRec2020) {
-        return 4.5f * linear;
-    } else if (betaRec2020 <= linear && linear < 1) {
-        return alphaRec2020 * powf(linear, 0.45f) - (alphaRec2020 - 1.0f);
-    } else {
-        return linear;
-    }
-}
-
-inline static float ToLinearToneMap(float v) {
-    v = std::max(0.0f, v);
-    return std::min(2.3f * pow(v, 2.8f), v / 5.0f + 0.8f);
 }
 
 float Luma(float r, float g, float b, const float* primaries) {
@@ -142,14 +120,6 @@ float SDRLuma(const float L, const float Lc, const float Ld) {
     float a = (Ld / Lc*Lc);
     float b = (1.0f / Ld);
     return L * (1 + a*L) / (1 + b*L);
-}
-
-float LinearSRGBToSRGB(float linearValue) {
-    if (linearValue <= 0.0031308) {
-        return 12.92f * linearValue;
-    } else {
-        return 1.055f * std::pow(linearValue, 1.0f / 2.4f) - 0.055f;
-    }
 }
 
 inline half loadHalf(uint16_t t) {
@@ -212,22 +182,6 @@ const static float32x4_t linearM1 = vdupq_n_f32(0.8f);
 const static float32x4_t linearM2 = vdupq_n_f32(0.2f);
 
 __attribute__((always_inline))
-inline float32x4_t LinearRec2020ToRec2020(const float32x4_t linear) {
-
-    uint32x4_t mask = vcgtq_f32(linear, vdupq_n_f32(betaRec2020));
-    uint32x4_t maskHigh = vcltq_f32(linear, vdupq_n_f32(betaRec2020));
-
-    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
-    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
-
-    low = vmulq_n_f32(low, 4.5f);
-    constexpr float fk = alphaRec2020 - 1;
-    high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), alphaRec2020), vdupq_n_f32(fk));
-
-    return vaddq_f32(low, high);
-}
-
-__attribute__((always_inline))
 inline float32x4_t dcpi3GammaCorrection(float32x4_t linear) {
     return vpowq_f32(linear, 1.0f/2.6f);
 }
@@ -249,21 +203,6 @@ inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxCo
     const float32x4_t zeros = vdupq_n_f32(0);
     const float32x4_t v = vminq_f32(vmaxq_f32(vrndq_f32(vmulq_f32(rgb, maxColors)), zeros), maxColors);
     return v;
-}
-
-float32x4_t LinearSRGBToSRGB(float32x4_t linear) {
-    const float32x4_t level = vdupq_n_f32(0.0031308);
-
-    uint32x4_t mask = vcgtq_f32(linear, level);
-    uint32x4_t maskHigh = vcltq_f32(linear, level);
-
-    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
-    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
-    low = vmulq_n_f32(low, 12.92f);
-
-    high = vsubq_f32(vmulq_n_f32(vpowq_f32(linear, 1.0f/2.4f), 1.055f), vdupq_n_f32(0.055f));
-    float32x4_t result = vaddq_f32(low, high);
-    return result;
 }
 
 __attribute__((always_inline))

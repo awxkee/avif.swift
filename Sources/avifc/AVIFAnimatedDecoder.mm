@@ -11,6 +11,7 @@
 #import "AVIFRGBAMultiplier.h"
 #import "PlatformImage.h"
 #import "AVIFImageXForm.h"
+#import <thread>
 
 @implementation AVIFAnimatedDecoder {
     avifDecoder *_idec;
@@ -25,6 +26,7 @@
     _idec->strictFlags = AVIF_STRICT_DISABLED;
     _idec->ignoreXMP = true;
     _idec->ignoreExif = true;
+    _idec->maxThreads = std::thread::hardware_concurrency();
     avifResult decodeResult = avifDecoderParse(_idec);
     if (decodeResult != AVIF_RESULT_OK) {
         avifDecoderDestroy(_idec);

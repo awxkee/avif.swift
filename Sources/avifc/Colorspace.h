@@ -11,6 +11,7 @@
 #import <vector>
 
 // https://64.github.io/tonemapping/
+// https://www.russellcottrell.com/photo/matrixCalculator.htm
 
 using namespace std;
 
@@ -219,11 +220,98 @@ static const vector<vector<float>> gamut_xyz_color_matrix_2020 = gamut_rgb_to_xy
 static const vector<vector<float>> gamut_xyz_color_matrix_709  = gamut_rgb_to_xyz_matrix(REC_709_PRIMARIES);
 static const vector<vector<float>> gamut_xyz_color_matrix_dciP3 = gamut_rgb_to_xyz_matrix(DCI_P3_PRIMARIES);
 static const vector<vector<float>> convert_matrix_2020_to_709  = mul(inverse(gamut_xyz_color_matrix_709), gamut_xyz_color_matrix_2020);
-static const vector<vector<float>> convert_matrix_2020_to_dciP3  = mul(inverse(gamut_xyz_color_matrix_dciP3), gamut_xyz_color_matrix_2020);
+static const vector<vector<float>> convert_matrix_2020_to_dciP3 = mul(inverse(gamut_xyz_color_matrix_dciP3), gamut_xyz_color_matrix_2020);
 static const vector<vector<float>> convert_matrix_DCIP3_to_709  = mul(inverse(gamut_xyz_color_matrix_709), gamut_xyz_color_matrix_dciP3);
 
 static const vector<vector<float>> inverseRec2020 = inverse(gamut_xyz_color_matrix_2020);
 static const vector<vector<float>> inverseDisplayP3 = inverse(gamut_xyz_color_matrix_dciP3);
+
+constexpr float betaRec2020 = 0.018053968510807f;
+constexpr float alphaRec2020 = 1.09929682680944f;
+
+float LinearSRGBToSRGB(float linearValue) {
+    if (linearValue <= 0.0031308) {
+        return 12.92f * linearValue;
+    } else {
+        return 1.055f * std::pow(linearValue, 1.0f / 2.4f) - 0.055f;
+    }
+}
+
+inline float LinearRec2020ToRec2020(float linear) {
+    if (0 <= betaRec2020 && linear < betaRec2020) {
+        return 4.5f * linear;
+    } else if (betaRec2020 <= linear && linear < 1) {
+        return alphaRec2020 * powf(linear, 0.45f) - (alphaRec2020 - 1.0f);
+    } else {
+        return linear;
+    }
+}
+
+inline float dciP3PQGammaCorrection(float linear) {
+    return pow(linear, 1.0f / 2.6f);
+}
+
+#if __arm64__
+
+static inline float32x4_t LinearITUR709ToITUR709(const float32x4_t linear) {
+    const float32x4_t level = vdupq_n_f32(0.018);
+
+    uint32x4_t mask = vcgtq_f32(linear, level);
+    uint32x4_t maskHigh = vcltq_f32(linear, level);
+
+    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
+    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+    low = vmulq_n_f32(low, 4.5f);
+
+    high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), 1.099f), vdupq_n_f32(0.099f));
+    float32x4_t result = vmaxq_f32(vaddq_f32(low, high), vdupq_n_f32(0));
+    return result;
+}
+
+static inline float32x4_t LinearSRGBToSRGB(const float32x4_t linear) {
+    const float32x4_t level = vdupq_n_f32(0.0031308);
+
+    uint32x4_t mask = vcgtq_f32(linear, level);
+    uint32x4_t maskHigh = vcltq_f32(linear, level);
+
+    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
+    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+    low = vmulq_n_f32(low, 12.92f);
+
+    high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 1.0f/2.4f), 1.055f), vdupq_n_f32(0.055f));
+    float32x4_t result = vmaxq_f32(vaddq_f32(low, high), vdupq_n_f32(0));
+    return result;
+}
+
+static inline float32x4_t LinearRec2020ToRec2020(const float32x4_t linear) {
+    uint32x4_t mask = vcgtq_f32(linear, vdupq_n_f32(betaRec2020));
+    uint32x4_t maskHigh = vcltq_f32(linear, vdupq_n_f32(betaRec2020));
+
+    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
+    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+
+    low = vmulq_n_f32(low, 4.5f);
+    constexpr float fk = alphaRec2020 - 1;
+    high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), alphaRec2020), vdupq_n_f32(fk));
+
+    return vaddq_f32(low, high);
+}
+
+__attribute__((always_inline))
+static inline float32x4_t applyMatrixNEON(vector<vector<float>> matrix, const float32x4_t v) {
+    const float32x4_t row1 = { matrix[0][0], matrix[0][1], matrix[0][2], 0.0f };
+    const float32x4_t row2 = { matrix[1][0], matrix[1][1], matrix[1][2], 0.0f };
+    const float32x4_t row3 = { matrix[2][0], matrix[2][1], matrix[2][2], 0.0f };
+    const float32x4_t v1 = vmulq_f32(v, row1);
+    const float32x4_t v2 = vmulq_f32(v, row2);
+    const float32x4_t v3 = vmulq_f32(v, row3);
+    const float r = vsumq_f32(v1);
+    const float g = vsumq_f32(v2);
+    const float b = vsumq_f32(v3);
+    const float32x4_t res = { r, g, b, 0.0f };
+    return res;
+}
+#endif
 
 inline vector<float> Colorspace_Gamut_Conversion_2020_to_DCIP3(const vector<float>& rgb)
 {

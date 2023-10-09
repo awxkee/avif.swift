@@ -62,14 +62,12 @@
     avifRGBImage rgbImage;
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
 
-    auto imageUsesAlpha = true;// decoder->image->imageOwnsAlphaPlane;
+    auto imageUsesAlpha = decoder->image->imageOwnsAlphaPlane;
 
     int components = imageUsesAlpha ? 4 : 3;
 
     auto colorPrimaries = decoder->image->colorPrimaries;
     auto transferCharacteristics = decoder->image->transferCharacteristics;
-
-    decoder->maxThreads = 6;
 
     bool isImageRequires64Bit = avifImageUsesU16(decoder->image);
     if (isImageRequires64Bit) {
@@ -157,10 +155,10 @@
         else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            PQGammaCorrection gamma;
+            PQGammaCorrection gamma = Rec2020;
             if (@available(iOS 15.0, *)) {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
-                gamma = Rec2020;
+                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearITUR_2020);
+                gamma = Linear;
             } else {
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
                 gamma = Rec2020;
@@ -209,8 +207,8 @@
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
             PQGammaCorrection gamma;
             if (@available(iOS 15.0, *)) {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
-                gamma = DisplayP3;
+                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearDisplayP3);
+                gamma = Linear;
             } else {
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
                 gamma = DisplayP3;
