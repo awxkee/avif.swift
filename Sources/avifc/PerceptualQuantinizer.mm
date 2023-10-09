@@ -112,17 +112,15 @@ const auto sourceColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020)
 const auto destinationColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
 const auto info = CGColorConversionInfoCreate(sourceColorSpace, destinationColorSpace);
 
-float SDRLuma(const float L, const float Lc, const float Ld) {
-    float a = (Ld / Lc*Lc);
-    float b = (1.0f / Ld);
-    return L * (1 + a*L) / (1 + b*L);
-}
-
 inline half loadHalf(uint16_t t) {
     half f;
     f.data_ = t;
     return f;
 }
+
+float rec2020LumaPrimaries[3] = {0.2627, 0.6780, 0.0593};
+
+ToneMapper* hdrToneMapper = new LogarithmicToneMapper(rec2020LumaPrimaries);
 
 void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, ToneMapper* toneMapper) {
     auto r = (float) loadHalf(data[0]);
@@ -135,6 +133,7 @@ void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, c
     b = smpte.b;
 
     toneMapper->Execute(r, g, b);
+    hdrToneMapper->Execute(r, g, b);
 
     if (gammaCorrection == Rec2020) {
         data[0] = half(clamp(LinearRec2020ToRec2020(r), 0.0f, 1.0f)).data_;
@@ -216,7 +215,7 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
     m = MatTransponseQF32(m);
 
     float32x4x4_t r = toneMapper->Execute(m);
-
+    r = hdrToneMapper->Execute(r);
     if (gammaCorrection == Rec2020) {
         r.val[0] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[0]), 0.0f, 1.0f);
         r.val[1] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[1]), 0.0f, 1.0f);
@@ -263,6 +262,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
     b = smpte.b;
 
     toneMapper->Execute(r, g, b);
+    hdrToneMapper->Execute(r, g, b);
 
     if (gammaCorrection == Rec2020) {
         r = LinearRec2020ToRec2020(r);
@@ -677,7 +677,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
      components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
+    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 203.0f, sdrReferencePoint);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height

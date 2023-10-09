@@ -17,7 +17,7 @@
 
 class HableToneMapper: public ToneMapper {
 public:
-    HableToneMapper() {
+    HableToneMapper(): exposure(1.0f) {
 
     }
 
@@ -33,6 +33,7 @@ public:
 private:
     float hable(const float x);
     const float sig = hable(4.8f);
+    const float exposure;
 #if __arm64__
     const float32x4_t sigVec = vdupq_n_f32(hable(4.8f));
 #endif

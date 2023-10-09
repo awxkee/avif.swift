@@ -7,49 +7,70 @@
 
 #include "Rec2408ToneMapper.hpp"
 #include <algorithm>
+#include "../NEMath.h"
 
 using namespace std;
 
 #if __arm64__
 
-__attribute__((always_inline))
-inline float vsumq_f32(const float32x4_t v) {
-    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-    return vget_lane_f32(vpadd_f32(r, r), 0);
+float Rec2408ToneMapper::SDR(float Lin) {
+    const float c1 = 107 / 128;
+    const float c2 = 2413 / 128;
+    const float c3 = 2392 / 128;
+    const float m1 = 1305 / 8192;
+    const float m2 = 2523 / 32;
+    const float v = pow(Lin / 10000, m1);
+    return pow((c1 + c2 * v) / (1 + c3 * v), m2);
+}
+
+float32x4_t Rec2408ToneMapper::SDR(float32x4_t Lin) {
+    const float c1 = 107 / 128;
+    const float c2 = 2413 / 128;
+    const float c3 = 2392 / 128;
+    const float m1 = 1305 / 8192;
+    const float m2 = 2523 / 32;
+    const float32x4_t v = vpowq_f32(vdivq_f32(Lin, vdupq_n_f32(10000)), m1);
+    return vpowq_f32(vdivq_f32(vmlaq_f32(vdupq_n_f32(c1), vdupq_n_f32(c2), v), vmlaq_f32(vdupq_n_f32(1), vdupq_n_f32(c3), v)), m2);
 }
 
 float32x4x4_t Rec2408ToneMapper::Execute(const float32x4x4_t m) {
-    const float32x4_t maximum = {
+    const float32x4_t Lin = {
         vsumq_f32(vmulq_f32(m.val[0], this->luma)),
         vsumq_f32(vmulq_f32(m.val[1], this->luma)),
         vsumq_f32(vmulq_f32(m.val[2], this->luma)),
         vsumq_f32(vmulq_f32(m.val[3], this->luma)),
     };
-    const float32x4_t shScale = vdivq_f32(vmlaq_f32(this->ones, this->aVec, maximum),
-                                          vmlaq_f32(this->ones, this->bVec, maximum));
+    const float32x4_t Lout = vdivq_f32(vmlaq_f32(this->ones, this->aVec, Lin),
+                                          vmlaq_f32(this->ones, this->bVec, Lin));
+
     float32x4x4_t r = {
-        vmulq_n_f32(m.val[0], vgetq_lane_f32(shScale, 0)),
-        vmulq_n_f32(m.val[1], vgetq_lane_f32(shScale, 1)),
-        vmulq_n_f32(m.val[2], vgetq_lane_f32(shScale, 2)),
-        vmulq_n_f32(m.val[3], vgetq_lane_f32(shScale, 3))
+        vmulq_n_f32(m.val[0], vgetq_lane_f32(Lout, 0)),
+        vmulq_n_f32(m.val[1], vgetq_lane_f32(Lout, 1)),
+        vmulq_n_f32(m.val[2], vgetq_lane_f32(Lout, 2)),
+        vmulq_n_f32(m.val[3], vgetq_lane_f32(Lout, 3))
     };
+    
     return r;
 }
 
 float32x4_t Rec2408ToneMapper::Execute(const float32x4_t m) {
-    const float maximum = vsumq_f32(vmulq_f32(m, this->luma));
-    const float shScale = (1.f + this->a * maximum) / (1.f + this->b * maximum);
+    const float Lin = vsumq_f32(vmulq_f32(m, this->luma));
+    if (Lin == 0) {
+        return m;
+    }
+    const float shScale = (1.f + this->a * Lin) / (1.f + this->b * Lin);
     return vmulq_n_f32(m, shScale);
 }
 
 #endif
 
 void Rec2408ToneMapper::Execute(float& r, float &g, float& b) {
-    const float maximum = r*0.2627 + g*0.6780 + b * 0.0593;
-    if (maximum > 0) {
-        const float shScale = (1.f + this->a * maximum) / (1.f + this->b * maximum);
-        r = r * shScale;
-        g = g * shScale;
-        b = b * shScale;
+    const float Lin = r*0.2627 + g*0.6780 + b * 0.0593;
+    if (Lin == 0) {
+        return;;
     }
+    const float shScale = (1.f + this->a * Lin) / (1.f + this->b * Lin);
+    r = r * shScale;
+    g = g * shScale;
+    b = b * shScale;
 }

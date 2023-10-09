@@ -46,6 +46,9 @@ float32x4x4_t MobiusToneMapper::Execute(const float32x4x4_t m) {
 #endif
 
 void MobiusToneMapper::Execute(float &r, float &g, float &b) {
+    r *= exposure;
+    g *= exposure;
+    b *= exposure;
     r = mobius(r);
     g = mobius(g);
     b = mobius(b);

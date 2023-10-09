@@ -31,6 +31,21 @@ static const std::array<float32x4_t, 8> log_tab =
     }
 };
 
+/* Log10 polynomial coefficients */
+static const std::array<float32x4_t, 8> log10Coeffs =
+{
+    {
+        vdupq_n_f32(-0.99697286229624f),
+        vdupq_n_f32(-1.07301643912502f),
+        vdupq_n_f32(-2.46980061535534f),
+        vdupq_n_f32(-0.07176870463131f),
+        vdupq_n_f32(2.247870219989470f),
+        vdupq_n_f32(0.366547581117400f),
+        vdupq_n_f32(1.991005185100089f),
+        vdupq_n_f32(0.006135635201050f),
+    }
+};
+
 static const uint32_t exp_f32_coeff[] =
 {
     0x3f7ffff6, // x^1: 0x1.ffffecp-1f
@@ -145,9 +160,23 @@ static inline float32x4_t vlogq_f32(float32x4_t x)
 
 static inline float32x4_t vlog10q_f32(float32x4_t x)
 {
-    static const float32x4_t CONST_LN10 = vdupq_n_f32(2.30258509299); // ln(2)
-    const float32x4_t v = vlogq_f32(x);
-    return vdivq_f32(v, CONST_LN10);
+    static const int32x4_t   CONST_127 = vdupq_n_s32(127);           // 127
+    static const float32x4_t CONST_LOG10 = vdupq_n_f32(0.3010299957f); // log(2)
+
+    // Extract exponent
+    int32x4_t   m   = vsubq_s32(vreinterpretq_s32_u32(vshrq_n_u32(vreinterpretq_u32_f32(x), 23)), CONST_127);
+    float32x4_t val = vreinterpretq_f32_s32(vsubq_s32(vreinterpretq_s32_f32(x), vshlq_n_s32(m, 23)));
+
+    // Polynomial Approximation
+    float32x4_t poly = vtaylor_polyq_f32(val, log10Coeffs);
+
+    // Reconstruct
+    poly = vmlaq_f32(poly, vcvtq_f32_s32(m), CONST_LOG10);
+
+    return poly;
+//    static const float32x4_t CONST_LN10 = vdupq_n_f32(2.30258509299); // ln(2)
+//    const float32x4_t v = vlogq_f32(x);
+//    return vdivq_f32(v, CONST_LN10);
 }
 
 __attribute__((always_inline))
@@ -216,6 +245,14 @@ __attribute__((always_inline))
 static inline float vsumq_f32(const float32x4_t v) {
     float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
     return vget_lane_f32(vpadd_f32(r, r), 0);
+}
+
+__attribute__((always_inline))
+static inline  float32x4_t vsetq_if_f32(const float32x4_t& inputVector, const float ifValue, const float newValue) {
+    float32x4_t ones = vdupq_n_f32(newValue);
+    uint32x4_t zeroMask = vceqq_f32(inputVector, vdupq_n_f32(ifValue));
+
+    return vbslq_f32(zeroMask, ones, inputVector);
 }
 
 #endif

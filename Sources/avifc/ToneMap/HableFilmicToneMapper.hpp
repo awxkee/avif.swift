@@ -33,12 +33,8 @@ public:
 private:
     float hableFilmic(float v);
     float hable(const float x);
-    const float sig = hable(4.8f);
     const float whiteScale = 1.0f / hable(11.2f);
     float exposure;
-#if __arm64__
-    const float32x4_t sigVec = vdupq_n_f32(hable(4.8f));
-#endif
 };
 
 #endif /* HableFilmicToneMapper_hpp */

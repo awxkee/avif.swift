@@ -17,9 +17,23 @@
 
 class ReinhardToneMapper: public ToneMapper {
 public:
-    ReinhardToneMapper(): lumaVec { 0.2126, 0.7152, 0.0722 }, lumaMaximum(1.0f), exposure(1.2f) {
-
+    ReinhardToneMapper(const bool extended = true): lumaVec { 0.2126, 0.7152, 0.0722 }, lumaMaximum(1.0f), exposure(1.2f) {
+        useExtended = extended;
+#if __arm64__
+        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+#endif
     }
+
+    ReinhardToneMapper(const float primaries[3], const bool extended = true): lumaMaximum(1.0f), exposure(1.0f) {
+        lumaVec[0] = primaries[0];
+        lumaVec[1] = primaries[1];
+        lumaVec[2] = primaries[2];
+#if __arm64__
+        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+#endif
+        useExtended = extended;
+    }
+
     ~ReinhardToneMapper() {
 
     }
@@ -31,13 +45,14 @@ public:
 #endif
 private:
     float reinhard(const float v);
-    const float lumaVec[3] = { 0.2126, 0.7152, 0.0722 };
+    float lumaVec[3] = { 0.2126, 0.7152, 0.0722 };
 #if __arm64__
-    const float32x4_t vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+    float32x4_t vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
 #endif
     float Luma(const float r, const float g, const float bs);
     const float lumaMaximum;
     const float exposure;
+    bool useExtended;
 };
 
 #endif /* ReinhardToneMapper_hpp */

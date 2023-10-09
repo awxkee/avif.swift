@@ -17,7 +17,7 @@
 
 class AcesHillToneMapper: public ToneMapper {
 public:
-    AcesHillToneMapper(): exposure(1.5f) {
+    AcesHillToneMapper(): exposure(1.0f) {
 
     }
 
