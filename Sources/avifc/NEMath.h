@@ -13,9 +13,11 @@
 #if __arm64__
 
 #include <arm_neon.h>
+#include <vector>
+#include <array>
 
 /* Logarithm polynomial coefficients */
-const std::array<float32x4_t, 8> log_tab =
+static const std::array<float32x4_t, 8> log_tab =
 {
     {
         vdupq_n_f32(-2.29561495781f),
@@ -139,6 +141,13 @@ static inline float32x4_t vlogq_f32(float32x4_t x)
     poly = vmlaq_f32(poly, vcvtq_f32_s32(m), CONST_LN2);
 
     return poly;
+}
+
+static inline float32x4_t vlog10q_f32(float32x4_t x)
+{
+    static const float32x4_t CONST_LN10 = vdupq_n_f32(2.30258509299); // ln(2)
+    const float32x4_t v = vlogq_f32(x);
+    return vdivq_f32(v, CONST_LN10);
 }
 
 __attribute__((always_inline))

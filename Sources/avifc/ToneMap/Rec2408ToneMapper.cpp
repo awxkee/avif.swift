@@ -10,19 +10,6 @@
 
 using namespace std;
 
-inline float hable(float x)
-{
-    const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;
-
-    return ((x * (A * x + (C * B)) + (D * E)) / (x * (A * x + B) + (D * F))) - E / F;
-}
-
-inline float ToneMappingHable(const float rgb)
-{
-    static const float HABLE_DIV = hable(4.8);
-    return hable(rgb) / HABLE_DIV;
-}
-
 #if __arm64__
 
 __attribute__((always_inline))
@@ -31,8 +18,8 @@ inline float vsumq_f32(const float32x4_t v) {
     return vget_lane_f32(vpadd_f32(r, r), 0);
 }
 
-float32x4x4_t Rec2408ToneMapper::toneMap(const float32x4x4_t m) {
-    const float32x4_t maximum = { 
+float32x4x4_t Rec2408ToneMapper::Execute(const float32x4x4_t m) {
+    const float32x4_t maximum = {
         vsumq_f32(vmulq_f32(m.val[0], this->luma)),
         vsumq_f32(vmulq_f32(m.val[1], this->luma)),
         vsumq_f32(vmulq_f32(m.val[2], this->luma)),
@@ -49,7 +36,7 @@ float32x4x4_t Rec2408ToneMapper::toneMap(const float32x4x4_t m) {
     return r;
 }
 
-float32x4_t Rec2408ToneMapper::toneMap(const float32x4_t m) {
+float32x4_t Rec2408ToneMapper::Execute(const float32x4_t m) {
     const float maximum = vsumq_f32(vmulq_f32(m, this->luma));
     const float shScale = (1.f + this->a * maximum) / (1.f + this->b * maximum);
     return vmulq_n_f32(m, shScale);
@@ -57,7 +44,7 @@ float32x4_t Rec2408ToneMapper::toneMap(const float32x4_t m) {
 
 #endif
 
-void Rec2408ToneMapper::toneMap(float& r, float &g, float& b) {
+void Rec2408ToneMapper::Execute(float& r, float &g, float& b) {
     const float maximum = r*0.2627 + g*0.6780 + b * 0.0593;
     if (maximum > 0) {
         const float shScale = (1.f + this->a * maximum) / (1.f + this->b * maximum);

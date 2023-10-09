@@ -8,15 +8,23 @@
 #ifndef Rec2408ToneMapper_hpp
 #define Rec2408ToneMapper_hpp
 
+#include "ToneMapper.hpp"
+#include "HableToneMapper.hpp"
+#include "MobiusToneMapper.hpp"
+#include "ReinhardToneMapper.hpp"
+#include "HableFilmicToneMapper.hpp"
+#include "AcesHillToneMapper.hpp"
+#include "LogarithmicToneMapper.hpp"
+
 #include <stdio.h>
 
 #if __arm64__
 #include <arm_neon.h>
 #endif
 
-class Rec2408ToneMapper {
+class Rec2408ToneMapper: public ToneMapper {
 public:
-    Rec2408ToneMapper(const float contentMaxBrightness, const float displayMaxBrightness, const float whitePoint) {
+    Rec2408ToneMapper(const float contentMaxBrightness, const float displayMaxBrightness, const float whitePoint): ToneMapper() {
         this->Ld = contentMaxBrightness / whitePoint;
         this->a = displayMaxBrightness / (Ld*Ld);
         this->b = 1.0f / displayMaxBrightness;
@@ -27,11 +35,10 @@ public:
 #endif
     }
 
-    void toneMap(float& r, float &g, float& b);
-
+    void Execute(float &r, float &g, float &b) override;
 #if __arm64__
-    float32x4x4_t toneMap(const float32x4x4_t m);
-    float32x4_t toneMap(const float32x4_t m);
+    float32x4_t Execute(const float32x4_t m) override;
+    float32x4x4_t Execute(const float32x4x4_t m) override;
 #endif
 
 private:

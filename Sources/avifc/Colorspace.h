@@ -328,48 +328,6 @@ inline vector<float> Colorspace_Gamut_Conversion_DCIP3_to_709(const vector<float
     return mul(convert_matrix_DCIP3_to_709, rgb);
 }
 
-static const std::vector<vector<float>> aces_input_matrix =
-{
-    {0.59719f, 0.35458f, 0.04823f},
-    {0.07600f, 0.90834f, 0.01566f},
-    {0.02840f, 0.13383f, 0.83777f}
-};
-
-static const std::vector<vector<float>> aces_output_matrix =
-{
-    { 1.60475f, -0.53108f, -0.07367f},
-    {-0.10208f,  1.10813f, -0.00605f},
-    {-0.00327f, -0.07276f,  1.07602f}
-};
-
-vector<float> rtt_and_odt_fit(vector<float> v)
-{
-    vector<float> a = add(mul(v, add(v, 0.0245786f)), - 0.000090537f);
-    vector<float> b = mul(mul(v, add(mul(v, 0.983729f), 0.4329510f)), 0.238081f);
-    return div(a, b);
-}
-
-vector<float> aces_approx(const vector<float>& v)
-{
-    vector<float> r = mul(v, 0.6f);
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    auto num = mul(r,add(mul(r,a),b));
-    auto den = add(mul(r, add(mul(r, c), d)), e);
-    auto ret = clamp(div(num, den), 0.0f, 1.0f);
-    return ret;
-}
-
-vector<float> aces_fitted(vector<float>& v)
-{
-    v = mul(aces_input_matrix, v);
-    v = rtt_and_odt_fit(v);
-    return mul(aces_output_matrix, v);
-}
-
 std::vector<float> acesFilmicToneMapping(const std::vector<float>& rgb) {
     std::vector<float> result(3);
     for (int i = 0; i < 3; ++i) {
@@ -419,31 +377,8 @@ std::vector<float> filmicUncharted3ToneMapping(const std::vector<float>& rgb) {
     return result;
 }
 
-std::vector<float> reinhard(const std::vector<float>& rgb) {
-    return div(rgb, add(rgb, 1.0f));
-}
-
-float reinhard(const float v) {
-    return v / (1.0f + v);
-}
-
 inline float Luma(const vector<float>& v, const float* primaries) {
     return v[0] * primaries[0] + v[1] * primaries[1] + v[2] * primaries[2];
-}
-
-vector<float> change_luminance(const vector<float>& c_in, float l_out, const float* primaries)
-{
-    float l_in = Luma(c_in, primaries);
-    const float scale = l_out / l_in;
-    return { c_in[0]*scale, c_in[1]*scale, c_in[2]*scale };
-}
-
-vector<float> reinhard_extended_luminance(const vector<float>& v, float max_white_l, const float* primaries)
-{
-    float l_old = Luma(v, primaries);
-    float numerator = l_old * (1.0f + (l_old / (max_white_l * max_white_l)));
-    float l_new = numerator / (1.0f + l_old);
-    return change_luminance(v, l_new, primaries);
 }
 
 template <typename T>
@@ -458,51 +393,4 @@ vector<float> reinhard_jodie(const vector<float>& v, const float* primaries)
     vector<float> res = { lerp(v[0] / (1.0f + l), tv[0], tv[0]), lerp(v[1] / (1.0f + l), tv[1], tv[1]), lerp(v[2] / (1.0f + l), tv[2], tv[2]) };
     return res;
 }
-
-float uncharted2_tonemap_partial(float x)
-{
-    float A = 0.15f;
-    float B = 0.50f;
-    float C = 0.10f;
-    float D = 0.20f;
-    float E = 0.02f;
-    float F = 0.30f;
-    return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
-}
-
-float uncharted2_filmic(float v)
-{
-    float exposure_bias = 2.0f;
-    float curr = uncharted2_tonemap_partial(v * exposure_bias);
-
-    float W = 11.2f;
-    float white_scale = 1.0f / uncharted2_tonemap_partial(W);
-    return curr * white_scale;
-}
-
-
-// Apply the Hable tone mapping operator to a single HDR pixel
-inline float hableToneMapping(float x) {
-    const float A = 0.15f;    // Shoulder Strength
-    const float B = 0.50f;    // Linear Strength
-    const float C = 0.10f;    // Linear Angle
-    const float D = 0.20f;    // Toe Strength
-    const float E = 0.02f;    // Toe Numerator
-    const float F = 0.30f;    // Toe Denominator
-    return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
-}
-
-inline float hable(float x)
-{
-    const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;
-
-    return ((x * (A * x + (C * B)) + (D * E)) / (x * (A * x + B) + (D * F))) - E / F;
-}
-
-inline float ToneMappingHable(const float rgb)
-{
-    static const float HABLE_DIV = hable(4.8);
-    return hable(rgb) / HABLE_DIV;
-}
-
 #endif /* Colorspace_h */

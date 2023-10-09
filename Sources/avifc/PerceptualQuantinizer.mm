@@ -44,7 +44,7 @@
 #import "NEMath.h"
 
 #import "Colorspace.h"
-#import "Rec2408ToneMapper.hpp"
+#import "ToneMap/Rec2408ToneMapper.hpp"
 #import "half.hpp"
 
 using namespace std;
@@ -96,10 +96,6 @@ inline TriStim ClipToWhite(TriStim* c, const float* primaries) {
     return *c;
 }
 
-float Luma(float r, float g, float b, const float* primaries) {
-    return r * primaries[0] + g * primaries[1] + b * primaries[2];
-}
-
 float clampf(float value, float min, float max) {
     return fmin(fmax(value, min), max);
 }
@@ -128,7 +124,7 @@ inline half loadHalf(uint16_t t) {
     return f;
 }
 
-void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, Rec2408ToneMapper* toneMapper) {
+void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, ToneMapper* toneMapper) {
     auto r = (float) loadHalf(data[0]);
     auto g = (float) loadHalf(data[1]);
     auto b = (float) loadHalf(data[2]);
@@ -138,7 +134,7 @@ void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, c
     g = smpte.g;
     b = smpte.b;
 
-    toneMapper->toneMap(r, g, b);
+    toneMapper->Execute(r, g, b);
 
     if (gammaCorrection == Rec2020) {
         data[0] = half(clamp(LinearRec2020ToRec2020(r), 0.0f, 1.0f)).data_;
@@ -209,7 +205,7 @@ __attribute__((always_inline))
 inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan, 
                               float32x4_t bChan,
                               PQGammaCorrection gammaCorrection,
-                              Rec2408ToneMapper* toneMapper) {
+                              ToneMapper* toneMapper) {
     float32x4_t pqR = ToLinearPQ(rChan);
     float32x4_t pqG = ToLinearPQ(gChan);
     float32x4_t pqB = ToLinearPQ(bChan);
@@ -219,7 +215,7 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
     };
     m = MatTransponseQF32(m);
 
-    float32x4x4_t r = toneMapper->toneMap(m);
+    float32x4x4_t r = toneMapper->Execute(m);
 
     if (gammaCorrection == Rec2020) {
         r.val[0] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[0]), 0.0f, 1.0f);
@@ -256,7 +252,7 @@ void TransferROW_U16(uint16_t *data, float maxColors, PQGammaCorrection gammaCor
 //    data[2] = float_to_half((float) smpte.b * scale);
 }
 
-void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorrection, Rec2408ToneMapper* toneMapper) {
+void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorrection, ToneMapper* toneMapper) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
@@ -266,7 +262,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
     g = smpte.g;
     b = smpte.b;
 
-    toneMapper->toneMap(r, g, b);
+    toneMapper->Execute(r, g, b);
 
     if (gammaCorrection == Rec2020) {
         r = LinearRec2020ToRec2020(r);
@@ -288,10 +284,8 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
 #if __arm64__
 
 +(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth primaries:(float*)primaries
-                 space:(PQGammaCorrection)space components:(int)components {
+                 space:(PQGammaCorrection)space components:(int)components toneMapper:(ToneMapper*)toneMapper {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-
-    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
@@ -368,13 +362,12 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             ptr16 += components;
         }
     });
-
-    delete toneMapper;
 }
 
 +(void)transferNEONU8:(nonnull uint8_t*)data
                stride:(int)stride width:(int)width height:(int)height depth:(int)depth
-            primaries:(float*)primaries space:(PQGammaCorrection)space components:(int)components {
+            primaries:(float*)primaries space:(PQGammaCorrection)space components:(int)components
+           toneMapper:(ToneMapper*)toneMapper {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
     const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
@@ -385,8 +378,6 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
     const float colorScale = 1.0f / float((1 << depth) - 1);
 
     const float32x4_t vMaxColors = vdupq_n_f32(maxColors);
-
-    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
@@ -588,8 +579,6 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             ptr16 += components;
         }
     });
-
-    delete toneMapper;
 }
 #endif
 
@@ -688,21 +677,22 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
      components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
     auto ptr = reinterpret_cast<uint8_t *>(data);
+    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
-                        depth:depth primaries:primaries space:gammaCorrection components:components];
+                        depth:depth primaries:primaries space:gammaCorrection components:components toneMapper:toneMapper];
+        delete toneMapper;
         return;
     }
     if (!U16) {
         [self transferNEONU8:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
-                       depth:depth primaries:primaries space:gammaCorrection components:components];
+                       depth:depth primaries:primaries space:gammaCorrection components:components toneMapper:toneMapper];
+        delete toneMapper;
         return;
     }
 #endif
     auto maxColors = powf(2, (float) depth) - 1;
-
-    Rec2408ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 1.0f, sdrReferencePoint);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {
