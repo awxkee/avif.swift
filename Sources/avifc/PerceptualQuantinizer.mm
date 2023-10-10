@@ -48,7 +48,9 @@
 #import "ToneMap/LogarithmicToneMapper.hpp"
 #import "ToneMap/ReinhardToneMapper.hpp"
 #import "ToneMap/ClampToneMapper.hpp"
+#import "ToneMap/ReinhardJodieToneMapper.hpp"
 #import "half.hpp"
+#import "Color/Gamma.hpp"
 
 using namespace std;
 using namespace half_float;
@@ -664,7 +666,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
      components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 150.0f, 130.0f);
+    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 250.0f, 250.0f);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
@@ -679,7 +681,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
         return;
     }
 #endif
-    auto maxColors = powf(2, (float) depth) - 1;
+    auto maxColors = pow(2, (float) depth) - 1;
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
     dispatch_apply(height, concurrentQueue, ^(size_t y) {

@@ -1,8 +1,8 @@
 //
-//  ToneMapper.hpp
+//  Gamma.cpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 08/10/2023.
+//  Created by Radzivon Bartoshyk on 10/10/2023.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -23,28 +23,31 @@
 //  THE SOFTWARE.
 //
 
-#ifndef ToneMapper_hpp
-#define ToneMapper_hpp
+#include "Gamma.hpp"
+#include "Math/math_powf.hpp"
 
-#include <stdio.h>
-
-#if __arm64__
-#include <arm_neon.h>
+#if defined(__clang__)
+#pragma clang fp contract(on) exceptions(ignore) reassociate(on)
 #endif
 
-class ToneMapper {
-
-public:
-    ToneMapper() {
-        
+float LinearSRGBToSRGB(const float linearValue) {
+    if (linearValue <= 0.0031308) {
+        return 12.92f * linearValue;
+    } else {
+        return 1.055f * powf_c(linearValue, 1.0f / 2.4f) - 0.055f;
     }
-    virtual ~ToneMapper() { };
-    virtual void Execute(float& r, float& g, float& b) = 0;
+}
 
-#if __arm64__
-    virtual float32x4x4_t Execute(const float32x4x4_t m) = 0;
-    virtual float32x4_t Execute(const float32x4_t m) = 0;
-#endif
-};
+float LinearRec2020ToRec2020(const float linear) {
+    if (0 <= betaRec2020 && linear < betaRec2020) {
+        return 4.5f * linear;
+    } else if (betaRec2020 <= linear && linear < 1) {
+        return alphaRec2020 * powf_c(linear, 0.45f) - (alphaRec2020 - 1.0f);
+    } else {
+        return linear;
+    }
+}
 
-#endif /* ToneMapper_hpp */
+float dciP3PQGammaCorrection(const float linear) {
+    return powf_c(linear, 1.0f / 2.6f);
+}
