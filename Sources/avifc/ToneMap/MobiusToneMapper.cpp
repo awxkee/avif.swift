@@ -10,6 +10,10 @@
 
 using namespace std;
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 float MobiusToneMapper::mobius(const float x)
 {
     const float in = x * exposure;

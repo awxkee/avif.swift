@@ -7,6 +7,11 @@
 
 #include "ClampToneMapper.hpp"
 #include <algorithm>
+#include "../NEMath.h"
+
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
 
 using namespace std;
 
@@ -35,24 +40,19 @@ void ClampToneMapper::Execute(float& r, float& g, float &b) {
 
 #if __arm64__
 
-__attribute__((always_inline))
-static inline float vsumq_f32CLMP(const float32x4_t v) {
-    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-    return vget_lane_f32(vpadd_f32(r, r), 0);
-}
-
 float32x4_t ClampToneMapper::Execute(const float32x4_t m) {
-    const float Lin = vsumq_f32CLMP(vmulq_n_f32(vmulq_f32(m, vLumaVec), exposure));
+    const float32x4_t v = vmulq_n_f32(m, exposure);
+    const float Lin = vsumq_f32(vmulq_f32(v, vLumaVec));
     if (Lin == 0) {
-        return m;
+        return v;
     }
     const float Lmax_ = LMax*exposure;
     const float Lout = clamp(Lin / Lmax_, 0.f, 1.f);
     const float scale = Lout / Lin;
     if (scale == 1) {
-        return m;
+        return v;
     }
-    return vmulq_n_f32(m, scale*exposure);
+    return vmulq_n_f32(v, scale);
 }
 
 float32x4x4_t ClampToneMapper::Execute(const float32x4x4_t m) {

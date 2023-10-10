@@ -38,6 +38,7 @@
 
 // check C++11 language features
 #if defined(__clang__)                                        // clang
+    #pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
     #if __has_feature(cxx_static_assert) && !defined(HALF_ENABLE_CPP11_STATIC_ASSERT)
         #define HALF_ENABLE_CPP11_STATIC_ASSERT 1
     #endif

@@ -8,6 +8,10 @@
 #include "ReinhardToneMapper.hpp"
 #include "../NEMath.h"
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 #if __arm64__
 __attribute__((always_inline))
 inline float32x4_t reinhardNEON(const float32x4_t v, const float lumaMaximum, const bool useExtended) {
@@ -32,7 +36,10 @@ float ReinhardToneMapper::reinhard(const float v) {
 }
 
 void ReinhardToneMapper::Execute(float& r, float& g, float& b) {
-    const float luma = Luma(r*exposure, g*exposure, b*exposure);
+    r *= exposure;
+    g *= exposure;
+    b *= exposure;
+    const float luma = Luma(r, g, b);
     if (luma == 0) {
         return;
     }
@@ -41,41 +48,48 @@ void ReinhardToneMapper::Execute(float& r, float& g, float& b) {
     if (scale == 1) {
         return;
     }
-    r = r * scale * exposure;
-    g = g * scale * exposure;
-    b = b * scale * exposure;
+    r = r * scale;
+    g = g * scale;
+    b = b * scale;
 }
 
 #if __arm64__
 
 float32x4_t ReinhardToneMapper::Execute(const float32x4_t m) {
-    const float luma = vsumq_f32(vmulq_n_f32(vmulq_f32(m, vLumaVec), exposure));
+    const float32x4_t v = vmulq_n_f32(m, exposure);
+    const float luma = vsumq_f32(vmulq_f32(v, vLumaVec));
     if (luma == 0) {
         return m;
     }
     const float reinhardLuma = reinhard(luma);
     const float scale = reinhardLuma / luma;
     if (scale == 1) {
-        return m;
+        return v;
     }
-    return vmulq_n_f32(m, scale*exposure);
+    return vmulq_n_f32(m, scale);
 }
 
 float32x4x4_t ReinhardToneMapper::Execute(const float32x4x4_t m) {
+    float32x4x4_t exposured = {
+        vmulq_n_f32(m.val[0], exposure),
+        vmulq_n_f32(m.val[1], exposure),
+        vmulq_n_f32(m.val[2], exposure),
+        vmulq_n_f32(m.val[3], exposure),
+    };
     float32x4_t Lin = {
-        vsumq_f32(vmulq_n_f32(vmulq_f32(m.val[0], vLumaVec), exposure)),
-        vsumq_f32(vmulq_n_f32(vmulq_f32(m.val[1], vLumaVec), exposure)),
-        vsumq_f32(vmulq_n_f32(vmulq_f32(m.val[2], vLumaVec), exposure)),
-        vsumq_f32(vmulq_n_f32(vmulq_f32(m.val[3], vLumaVec), exposure)),
+        vsumq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
+        vsumq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
+        vsumq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
+        vsumq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
     };
     Lin = vsetq_if_f32(Lin, 0.0f, 1.0f);
     const float32x4_t Lout = vsetq_if_f32(reinhardNEON(Lin, lumaMaximum, useExtended), 0.0f, 1.0f);
     const float32x4_t scale = vdivq_f32(Lout, Lin);
     float32x4x4_t r = {
-        vmulq_n_f32(vmulq_n_f32(m.val[0], vgetq_lane_f32(scale, 0)), exposure),
-        vmulq_n_f32(vmulq_n_f32(m.val[1], vgetq_lane_f32(scale, 1)), exposure),
-        vmulq_n_f32(vmulq_n_f32(m.val[2], vgetq_lane_f32(scale, 2)), exposure),
-        vmulq_n_f32(vmulq_n_f32(m.val[3], vgetq_lane_f32(scale, 3)), exposure)
+        vmulq_n_f32(exposured.val[0], vgetq_lane_f32(scale, 0)),
+        vmulq_n_f32(exposured.val[1], vgetq_lane_f32(scale, 1)),
+        vmulq_n_f32(exposured.val[2], vgetq_lane_f32(scale, 2)),
+        vmulq_n_f32(exposured.val[3], vgetq_lane_f32(scale, 3)),
     };
     return r;
 }

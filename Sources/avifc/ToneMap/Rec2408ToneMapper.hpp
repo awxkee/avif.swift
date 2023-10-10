@@ -9,14 +9,6 @@
 #define Rec2408ToneMapper_hpp
 
 #include "ToneMapper.hpp"
-#include "HableToneMapper.hpp"
-#include "MobiusToneMapper.hpp"
-#include "ReinhardToneMapper.hpp"
-#include "HableFilmicToneMapper.hpp"
-#include "AcesHillToneMapper.hpp"
-#include "LogarithmicToneMapper.hpp"
-#include "ClampToneMapper.hpp"
-#include "DragoToneMapper.hpp"
 
 #include <stdio.h>
 

@@ -42,9 +42,12 @@
 #endif
 
 #import "NEMath.h"
-
+#import "Math/math_powf.hpp"
 #import "Colorspace.h"
 #import "ToneMap/Rec2408ToneMapper.hpp"
+#import "ToneMap/LogarithmicToneMapper.hpp"
+#import "ToneMap/ReinhardToneMapper.hpp"
+#import "ToneMap/ClampToneMapper.hpp"
 #import "half.hpp"
 
 using namespace std;
@@ -60,8 +63,8 @@ inline float ToLinearPQ(float v) {
     float c1 = 3424.0f / 4096.0f;
     float c2 = (2413.0f / 4096.0f) * 32.0f;
     float c3 = (2392.0f / 4096.0f) * 32.0f;
-    float p = pow(v, 1.0f / m2);
-    v = powf(max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
+    float p = powf_c(v, 1.0f / m2);
+    v = powf_c(max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
     v *= 10000.0f / sdrReferencePoint;
     return copysign(v, o);
 }
@@ -96,22 +99,6 @@ inline TriStim ClipToWhite(TriStim* c, const float* primaries) {
     return *c;
 }
 
-float clampf(float value, float min, float max) {
-    return fmin(fmax(value, min), max);
-}
-
-void ToneMap(TriStim& stim, float luma, float* primaries) {
-    if (luma < 1.0f) {
-        return;
-    }
-
-    const float contentMaxLuma = 1.0f;
-}
-
-const auto sourceColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
-const auto destinationColorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-const auto info = CGColorConversionInfoCreate(sourceColorSpace, destinationColorSpace);
-
 inline half loadHalf(uint16_t t) {
     half f;
     f.data_ = t;
@@ -120,7 +107,7 @@ inline half loadHalf(uint16_t t) {
 
 float rec2020LumaPrimaries[3] = {0.2627, 0.6780, 0.0593};
 
-ToneMapper* hdrToneMapper = new LogarithmicToneMapper(rec2020LumaPrimaries);
+ToneMapper* hdrToneMapper = new ClampToneMapper(rec2020LumaPrimaries);
 
 void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, ToneMapper* toneMapper) {
     auto r = (float) loadHalf(data[0]);
@@ -677,7 +664,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
      components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 203.0f, sdrReferencePoint);
+    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 150.0f, 130.0f);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height

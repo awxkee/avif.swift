@@ -7,6 +7,10 @@
 
 #include "HableToneMapper.hpp"
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 float HableToneMapper::hable(const float x)
 {
     const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;
@@ -14,9 +18,9 @@ float HableToneMapper::hable(const float x)
 }
 
 void HableToneMapper::Execute(float& r, float& g, float &b) {
-    r = hable(r) / sig;
-    g = hable(g) / sig;
-    b = hable(b) / sig;
+    r = hable(r*exposure) / sig;
+    g = hable(g*exposure) / sig;
+    b = hable(b*exposure) / sig;
 }
 
 #if __arm64__

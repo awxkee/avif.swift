@@ -15,6 +15,8 @@
 
 using namespace std;
 
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+
 static const float REC_709_PRIMARIES[3][2]  = { { 0.640, 0.330 }, { 0.300, 0.600 }, { 0.150, 0.060 } };
 static const float REC_2020_PRIMARIES[3][2] = { { 0.708, 0.292 }, { 0.170, 0.797 }, { 0.131, 0.046 } };
 static const float DCI_P3_PRIMARIES[3][2] = { { 0.740, 0.270 }, { 0.220, 0.780 }, { 0.090, -0.090 } };

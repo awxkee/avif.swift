@@ -10,12 +10,19 @@
 
 using namespace std;
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 float DragoToneMapper::Luma(const float r, const float g, const float b) {
     return r * lumaVec[0] + g * lumaVec[1] + b * lumaVec[2];
 }
 
 void DragoToneMapper::Execute(float& r, float& g, float &b) {
-    float Lin = Luma(r * exposure, g * exposure, b * exposure);
+    r *= exposure;
+    g *= exposure;
+    b *= exposure;
+    float Lin = Luma(r, g, b);
 
     // Apply exposure scale to parameters
     const float Lmax = this->LdMax * exposure;
@@ -36,9 +43,9 @@ void DragoToneMapper::Execute(float& r, float& g, float &b) {
         return;
     }
 
-    r = r * exposure * scale;
-    g = g * exposure * scale;
-    b = b * exposure * scale;
+    r = r * scale;
+    g = g * scale;
+    b = b * scale;
 }
 
 #if __arm64__
@@ -50,9 +57,10 @@ static inline float vsumq_f32Drago(const float32x4_t v) {
 }
 
 float32x4_t DragoToneMapper::Execute(const float32x4_t m) {
-    const float Lin = vsumq_f32Drago(vmulq_n_f32(vmulq_f32(m, vLumaVec), exposure));
+    const float32x4_t v = vmulq_n_f32(m, exposure);
+    const float Lin = vsumq_f32Drago(vmulq_n_f32(vmulq_f32(v, vLumaVec), exposure));
     if (Lin == 0) {
-        return m;
+        return v;
     }
     const float Lmax = this->LdMax * exposure;
 
@@ -69,9 +77,9 @@ float32x4_t DragoToneMapper::Execute(const float32x4_t m) {
 
     const float scale = Lout / Lin;
     if (scale == 1) {
-        return m;
+        return v;
     }
-    return vmulq_n_f32(m, scale*exposure);
+    return vmulq_n_f32(m, scale);
 }
 
 float32x4x4_t DragoToneMapper::Execute(const float32x4x4_t m) {

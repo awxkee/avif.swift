@@ -35,6 +35,10 @@
 #include <arm_neon.h>
 #endif
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 using namespace half_float;
 using namespace std;
 

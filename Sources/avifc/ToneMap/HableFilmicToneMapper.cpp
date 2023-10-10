@@ -7,6 +7,10 @@
 
 #include "HableFilmicToneMapper.hpp"
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 float HableFilmicToneMapper::hable(const float x)
 {
     const float A = 0.15, B = 0.50, C = 0.10, D = 0.20, E = 0.02, F = 0.30;

@@ -16,6 +16,10 @@
 #include <vector>
 #include <array>
 
+#if defined(__clang__)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
+#endif
+
 /* Logarithm polynomial coefficients */
 static const std::array<float32x4_t, 8> log_tab =
 {

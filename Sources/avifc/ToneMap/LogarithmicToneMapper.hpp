@@ -25,19 +25,21 @@ public:
         lumaVec[0] = primaries[0];
         lumaVec[1] = primaries[1];
         lumaVec[2] = primaries[2];
-#if __arm64__
-        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
-#endif
         Lmax_ = exposure * LMax;
         den = log10(1.0 + curve * Lmax_);
+#if __arm64__
+        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+        vDenVec = vdupq_n_f32(den);
+#endif
     }
 
     LogarithmicToneMapper(): lumaVec { 0.2126, 0.7152, 0.0722 }, curve(1.0f), exposure(1.0f), LMax(1.0f) {
-#if __arm64__
-        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
-#endif
         Lmax_ = exposure * LMax;
         den = log10(1.0 + curve * Lmax_);
+#if __arm64__
+        vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+        vDenVec = vdupq_n_f32(den);
+#endif
     }
 
     ~LogarithmicToneMapper() {
@@ -59,6 +61,7 @@ private:
     float Luma(const float r, const float g, const float b);
 #if __arm64__
     float32x4_t vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
+    float32x4_t vDenVec;
 #endif
 };
 
