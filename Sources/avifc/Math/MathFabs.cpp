@@ -1,5 +1,5 @@
 //
-//  Gamma.cpp
+//  MathFabs.cpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
 //  Created by Radzivon Bartoshyk on 10/10/2023.
@@ -23,31 +23,20 @@
 //  THE SOFTWARE.
 //
 
-#include "Gamma.hpp"
-#include "Math/FastMath.hpp"
+#include "MathFabs.hpp"
 
 #if defined(__clang__)
-#pragma clang fp contract(on) exceptions(ignore) reassociate(on)
+#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
 #endif
 
-float LinearSRGBToSRGB(const float linearValue) {
-    if (linearValue <= 0.0031308) {
-        return 12.92f * linearValue;
-    } else {
-        return 1.055f * powf_c(linearValue, 1.0f / 2.4f) - 0.055f;
-    }
-}
+float fabsf_c(float x)
+{
+    union {
+        int i;
+        float f;
+    } xx;
 
-float LinearRec2020ToRec2020(const float linear) {
-    if (0 <= betaRec2020 && linear < betaRec2020) {
-        return 4.5f * linear;
-    } else if (betaRec2020 <= linear && linear < 1) {
-        return alphaRec2020 * powf_c(linear, 0.45f) - (alphaRec2020 - 1.0f);
-    } else {
-        return linear;
-    }
-}
-
-float dciP3PQGammaCorrection(const float linear) {
-    return powf_c(linear, 1.0f / 2.6f);
+    xx.f = x;
+    xx.i = xx.i & 0x7FFFFFFF;
+    return xx.f;
 }

@@ -1,8 +1,8 @@
 //
-//  Gamma.cpp
+//  PerceptualQuantinizer.h
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 10/10/2023.
+//  Created by Radzivon Bartoshyk on 06/09/2022.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -23,31 +23,23 @@
 //  THE SOFTWARE.
 //
 
-#include "Gamma.hpp"
-#include "Math/FastMath.hpp"
+#ifndef PerceptualQuantinizer_h
+#define PerceptualQuantinizer_h
 
-#if defined(__clang__)
-#pragma clang fp contract(on) exceptions(ignore) reassociate(on)
-#endif
+enum ColorGammaCorrection {
+    Linear, Rec2020, DisplayP3
+};
 
-float LinearSRGBToSRGB(const float linearValue) {
-    if (linearValue <= 0.0031308) {
-        return 12.92f * linearValue;
-    } else {
-        return 1.055f * powf_c(linearValue, 1.0f / 2.4f) - 0.055f;
-    }
-}
+enum TransferFunction {
+    PQ, HLG, SMPTE428
+};
 
-float LinearRec2020ToRec2020(const float linear) {
-    if (0 <= betaRec2020 && linear < betaRec2020) {
-        return 4.5f * linear;
-    } else if (betaRec2020 <= linear && linear < 1) {
-        return alphaRec2020 * powf_c(linear, 0.45f) - (alphaRec2020 - 1.0f);
-    } else {
-        return linear;
-    }
-}
+@interface HDRColorTransfer : NSObject
++(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width
+        height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
+        primaries:(nonnull float*)primaries components:(int)components
+        gammaCorrection:(ColorGammaCorrection)gammaCorrection
+        function:(TransferFunction)function;
+@end
 
-float dciP3PQGammaCorrection(const float linear) {
-    return powf_c(linear, 1.0f / 2.6f);
-}
+#endif /* PerceptualQuantinizer_h */

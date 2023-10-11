@@ -1,5 +1,5 @@
 //
-//  Gamma.cpp
+//  MathLog10f.hpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
 //  Created by Radzivon Bartoshyk on 10/10/2023.
@@ -23,31 +23,11 @@
 //  THE SOFTWARE.
 //
 
-#include "Gamma.hpp"
-#include "Math/FastMath.hpp"
+#ifndef math_log10f_hpp
+#define math_log10f_hpp
 
-#if defined(__clang__)
-#pragma clang fp contract(on) exceptions(ignore) reassociate(on)
-#endif
+#include <stdio.h>
 
-float LinearSRGBToSRGB(const float linearValue) {
-    if (linearValue <= 0.0031308) {
-        return 12.92f * linearValue;
-    } else {
-        return 1.055f * powf_c(linearValue, 1.0f / 2.4f) - 0.055f;
-    }
-}
+float log10f_c(float x);
 
-float LinearRec2020ToRec2020(const float linear) {
-    if (0 <= betaRec2020 && linear < betaRec2020) {
-        return 4.5f * linear;
-    } else if (betaRec2020 <= linear && linear < 1) {
-        return alphaRec2020 * powf_c(linear, 0.45f) - (alphaRec2020 - 1.0f);
-    } else {
-        return linear;
-    }
-}
-
-float dciP3PQGammaCorrection(const float linear) {
-    return powf_c(linear, 1.0f / 2.6f);
-}
+#endif /* math_log10f_hpp */

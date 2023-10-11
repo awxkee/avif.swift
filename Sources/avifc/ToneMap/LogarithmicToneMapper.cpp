@@ -26,8 +26,7 @@
 #include "LogarithmicToneMapper.hpp"
 #include <algorithm>
 #include "NEMath.h"
-#include "Math/math_log10f.hpp"
-#include "Math/math_fabs.hpp"
+#include "Math/FastMath.hpp"
 
 #if defined(__clang__)
 #pragma clang fp contract(fast) exceptions(ignore) reassociate(on)

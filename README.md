@@ -14,7 +14,8 @@ Main aim of the project is to use `AVIF` image on all Apple platforms etc with u
 
 Supports animated AVIF's with realtime FPS like 24+
 Also supports encoding animated AVIF's
-Tries to properly map HDR images to display
+
+Handles HDR images with PQ, HLG and SMPTE428 transfer functions
 
 Precompiled for iOS 11+, Mac OS 12+, Mac Catalyst 14+, WatchOS 6+, tvOS 13+
 

@@ -1,8 +1,8 @@
 //
-//  math_fabs.cpp
+//  MathExpf.hpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 10/10/2023.
+//  Created by Radzivon Bartoshyk on 11/10/2023.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -23,20 +23,11 @@
 //  THE SOFTWARE.
 //
 
-#include "math_fabs.hpp"
+#ifndef math_expf_hpp
+#define math_expf_hpp
 
-#if defined(__clang__)
-#pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
-#endif
+#include <stdio.h>
 
-float fabsf_c(float x)
-{
-    union {
-        int i;
-        float f;
-    } xx;
+float expf_c(float x);
 
-    xx.f = x;
-    xx.i = xx.i & 0x7FFFFFFF;
-    return xx.f;
-}
+#endif /* math_expf_hpp */

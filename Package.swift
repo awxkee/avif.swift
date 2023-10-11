@@ -30,7 +30,6 @@ let package = Package(
             dependencies: ["avifc"]),
         .target(name: "avifc",
                 dependencies: [.target(name: "libavif")],
-                resources: [.copy("Metal/SMPTE2084.metal")],
                 cxxSettings: [.headerSearchPath(".")],
                 linkerSettings: [
                     .linkedFramework("Accelerate")

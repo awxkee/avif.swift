@@ -97,18 +97,6 @@ std::vector<float> div(const std::vector<float>& numerator, const std::vector<fl
     return result;
 }
 
-std::vector<float> clamp(const std::vector<float>& inputVector, float minValue, float maxValue) {
-    std::vector<float> result;
-    result.reserve(inputVector.size());
-
-    for (const float& element : inputVector) {
-        float clampedValue = (element < minValue) ? minValue : (element > maxValue) ? maxValue : element;
-        result.push_back(clampedValue);
-    }
-
-    return result;
-}
-
 vector<float> xy_to_xyz(const float x, const float y)
 {
     vector<float> ret(3, 0.0f);

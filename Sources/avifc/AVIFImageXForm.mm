@@ -28,7 +28,7 @@
 #import <vector>
 #import <Accelerate/Accelerate.h>
 #import <CoreGraphics/CoreGraphics.h>
-#import "PerceptualQuantinizer.h"
+#import "HDRColorTransfer.h"
 #import "TargetConditionals.h"
 #import "Rgb1010102Converter.h"
 #import "RgbTransfer.h"
@@ -37,14 +37,14 @@
 
 +(bool)RGBA8toF16:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height {
     int newStride = width * sizeof(uint16_t) * 4;
-
+    
     vImage_Buffer srcBuffer = {
         .data = (void*)data,
         .width = static_cast<vImagePixelCount>(width * 4),
         .height = static_cast<vImagePixelCount>(height),
         .rowBytes = static_cast<size_t>(stride)
     };
-
+    
     vImage_Buffer dstBuffer = {
         .data = dst,
         .width = static_cast<vImagePixelCount>(width * 4),
@@ -61,14 +61,14 @@
 - (_Nullable CGImageRef)formCGImage:(nonnull avifDecoder*)decoder scale:(CGFloat)scale {
     avifRGBImage rgbImage;
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
-
+    
     auto imageUsesAlpha = decoder->image->imageOwnsAlphaPlane || decoder->image->alphaPlane != nullptr;
-
+    
     int components = imageUsesAlpha ? 4 : 3;
-
+    
     auto colorPrimaries = decoder->image->colorPrimaries;
     auto transferCharacteristics = decoder->image->transferCharacteristics;
-
+    
     bool isImageRequires64Bit = avifImageUsesU16(decoder->image);
     if (isImageRequires64Bit) {
         rgbImage.alphaPremultiplied = false;
@@ -81,29 +81,29 @@
         rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
     }
     avifRGBImageAllocatePixels(&rgbImage);
-
+    
     avifResult rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgbImage);
         return nil;
     }
-
+    
     int newWidth = rgbImage.width;
     int newHeight = rgbImage.height;
     int newRowBytes = rgbImage.rowBytes;
     int depth = decoder->image->depth == 10 ? 10 : (decoder->image->depth > 8 ? 16 : 8);
     int stride = rgbImage.rowBytes;
     auto pixelsData = reinterpret_cast<unsigned char*>(malloc(stride * newHeight));
-
+    
     if (![RgbTransfer CopyBuffer:rgbImage.pixels dst:pixelsData stride:stride width:newWidth height:newHeight
                        pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t) components:components]) {
         avifRGBImageFreePixels(&rgbImage);
         free(pixelsData);
         return nil;
     }
-
+    
     avifRGBImageFreePixels(&rgbImage);
-
+    
     CGColorSpaceRef colorSpace;
     bool useHDR = false;
     if(decoder->image->icc.data && decoder->image->icc.size) {
@@ -153,9 +153,19 @@
             colorSpace = bt2020;
         }
         else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                 transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                 (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
+                  || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
+                  || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            PQGammaCorrection gamma = Rec2020;
+            ColorGammaCorrection gamma = Rec2020;
+            TransferFunction function;
+            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                function = PQ;
+            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
+                function = HLG;
+            } else {
+                function = SMPTE428;
+            }
             if (@available(iOS 15.0, *)) {
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearITUR_2020);
                 gamma = Linear;
@@ -163,18 +173,11 @@
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
                 gamma = Rec2020;
             }
-            [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
-                                     stride:stride width:newWidth height:newHeight
-                                        U16:depth > 8 depth:depth half:depth > 8
-                                  primaries:lumaPrimaries components:components
-                                    gammaCorrection:gamma];
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-            if (@available(iOS 14.0, macOS 11.0, *)) {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_HLG);
-            } else {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020_HLG);
-            }
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+                                stride:stride width:newWidth height:newHeight
+                                   U16:depth > 8 depth:depth half:depth > 8
+                             primaries:lumaPrimaries components:components
+                       gammaCorrection:gamma function:function];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                    transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             static CGColorSpaceRef bt2020linear = NULL;
@@ -194,18 +197,19 @@
             }
             colorSpace = p3;
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-            CGColorSpaceRef p3hlg = NULL;
-            if (@available(macOS 10.14.6, iOS 13.0, tvOS 13.0, *)) {
-                p3hlg = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3_HLG);
-            } else {
-                p3hlg = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = p3hlg;
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            PQGammaCorrection gamma;
+            ColorGammaCorrection gamma;
+            TransferFunction function;
+            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                function = PQ;
+            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
+                function = HLG;
+            } else {
+                function = SMPTE428;
+            }
             if (@available(iOS 15.0, *)) {
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearDisplayP3);
                 gamma = Linear;
@@ -213,13 +217,12 @@
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
                 gamma = DisplayP3;
             }
-            [PerceptualQuantinizer transfer:reinterpret_cast<uint8_t*>(pixelsData)
-                                     stride:stride width:newWidth height:newHeight
-                                        U16:depth > 8 depth:depth half:depth > 8
-                                  primaries:lumaPrimaries components:components 
-                            gammaCorrection:gamma];
-        }
-        else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+                                stride:stride width:newWidth height:newHeight
+                                   U16:depth > 8 depth:depth half:depth > 8
+                             primaries:lumaPrimaries components:components
+                       gammaCorrection:gamma function:function];
+        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
             if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
@@ -233,7 +236,7 @@
             colorSpace = CGColorSpaceCreateDeviceRGB();
         }
     }
-
+    
     if (!colorSpace) {
         colorSpace = CGColorSpaceCreateDeviceRGB();
     }
@@ -273,9 +276,9 @@
         free(pixelsData);
         return NULL;
     }
-
+    
     int bitsPerPixel = (use10Bits || depth == 8) ? (8*components) : (16*components);
-
+    
     CGImageRef imageRef = CGImageCreate(newWidth, newHeight, depth, bitsPerPixel,
                                         stride, colorSpace, flags, provider, NULL, false, kCGRenderingIntentDefault);
     return imageRef;

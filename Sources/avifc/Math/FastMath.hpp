@@ -1,8 +1,8 @@
 //
-//  math_log10f.hpp
+//  fast_math.cpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
-//  Created by Radzivon Bartoshyk on 10/10/2023.
+//  Created by Radzivon Bartoshyk on 11/10/2023.
 //
 //  Permission is hereby granted, free of charge, to any person obtaining a copy
 //  of this software and associated documentation files (the "Software"), to deal
@@ -23,11 +23,12 @@
 //  THE SOFTWARE.
 //
 
-#ifndef math_log10f_hpp
-#define math_log10f_hpp
+#ifndef FAST_MATH_H
+#define FAST_MATH_H
 
-#include <stdio.h>
+#include "MathExpf.hpp"
+#include "MathLog10f.hpp"
+#include "MathFabs.hpp"
+#include "MathPowf.hpp"
 
-float log10f_c(float x);
-
-#endif /* math_log10f_hpp */
+#endif /* FAST_MATH_H */

@@ -276,6 +276,32 @@ static inline float32x4_t vsetq_if_f32(const float32x4_t& inputVector, const flo
     return vbslq_f32(zeroMask, ones, inputVector);
 }
 
+__attribute__((always_inline))
+static inline float32x4_t vgtq_n_f32(const float32x4_t& inputVector, const float ifValue, const float newValue) {
+    const float32x4_t replace = vdupq_n_f32(newValue);
+    const uint32x4_t zeroMask = vcgtq_f32(inputVector, vdupq_n_f32(ifValue));
+    return vbslq_f32(zeroMask, replace, inputVector);
+}
+
+__attribute__((always_inline))
+static inline float32x4_t vltq_n_f32(const float32x4_t& inputVector, const float ifValue, const float newValue) {
+    const float32x4_t replace = vdupq_n_f32(newValue);
+    const uint32x4_t zeroMask = vcltq_f32(inputVector, vdupq_n_f32(ifValue));
+    return vbslq_f32(zeroMask, replace, inputVector);
+}
+
+__attribute__((always_inline))
+static inline float vsumq_f16(const float16x8_t v) {
+    const float32x4_t low = vcvt_f32_f16(vget_low_f16(v));
+    const float32x4_t high = vcvt_f32_f16(vget_high_f16(v));
+    return vsumq_f32(vaddq_f32(high, low));
+}
+
+__attribute__((always_inline))
+static inline float16x8_t vdupq_n_f16_f32(const float v) {
+    return vcombine_f16(vcvt_f16_f32(vdupq_n_f32(v)), vcvt_f16_f32(vdupq_n_f32(v)));
+}
+
 #endif
 
 #endif // _cplusplus

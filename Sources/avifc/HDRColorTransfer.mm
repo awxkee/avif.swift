@@ -29,7 +29,7 @@
 // https://www.itu.int/dms_pub/itu-r/opb/rep/R-REP-BT.2446-2019-PDF-E.pdf
 
 #import <Foundation/Foundation.h>
-#import "PerceptualQuantinizer.h"
+#import "HDRColorTransfer.h"
 #import "Accelerate/Accelerate.h"
 
 #if __has_include(<Metal/Metal.h>)
@@ -42,7 +42,7 @@
 #endif
 
 #import "NEMath.h"
-#import "Math/math_powf.hpp"
+#import "Math/FastMath.hpp"
 #import "Colorspace.h"
 #import "ToneMap/Rec2408ToneMapper.hpp"
 #import "ToneMap/LogarithmicToneMapper.hpp"
@@ -51,25 +51,14 @@
 #import "ToneMap/ReinhardJodieToneMapper.hpp"
 #import "half.hpp"
 #import "Color/Gamma.hpp"
+#import "Color/PQ.hpp"
+#import "Color/HLG.hpp"
+#import "Color/SMPTE428.hpp"
 
 using namespace std;
 using namespace half_float;
 
-float sdrReferencePoint = 203.0f;
-
-inline float ToLinearPQ(float v) {
-    float o = v;
-    v = max(0.0f, v);
-    float m1 = (2610.0f / 4096.0f) / 4.0f;
-    float m2 = (2523.0f / 4096.0f) * 128.0f;
-    float c1 = 3424.0f / 4096.0f;
-    float c2 = (2413.0f / 4096.0f) * 32.0f;
-    float c3 = (2392.0f / 4096.0f) * 32.0f;
-    float p = powf_c(v, 1.0f / m2);
-    v = powf_c(max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
-    v *= 10000.0f / sdrReferencePoint;
-    return copysign(v, o);
-}
+constexpr float sdrReferencePoint = 203.0f;
 
 struct TriStim {
     float r;
@@ -111,11 +100,19 @@ float rec2020LumaPrimaries[3] = {0.2627, 0.6780, 0.0593};
 
 ToneMapper* hdrToneMapper = new ClampToneMapper(rec2020LumaPrimaries);
 
-void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, const float* primaries, ToneMapper* toneMapper) {
+void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection, const float* primaries,
+                            ToneMapper* toneMapper, TransferFunction transfer) {
     auto r = (float) loadHalf(data[0]);
     auto g = (float) loadHalf(data[1]);
     auto b = (float) loadHalf(data[2]);
-    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    TriStim smpte;
+    if (transfer == PQ) {
+        smpte = {ToLinearPQ(r, sdrReferencePoint), ToLinearPQ(g, sdrReferencePoint), ToLinearPQ(b, sdrReferencePoint)};
+    } else if (transfer == HLG) {
+        smpte = {HLGToLinear(r), HLGToLinear(g), HLGToLinear(b)};
+    } else {
+        smpte = {SMPTE428ToLinear(r), SMPTE428ToLinear(g), SMPTE428ToLinear(b)};
+    }
 
     r = smpte.r;
     g = smpte.g;
@@ -140,30 +137,6 @@ void TransferROW_U16HFloats(uint16_t *data, PQGammaCorrection gammaCorrection, c
 }
 
 #if __arm64__
-
-// Constants
-const static float32x4_t zeros = vdupq_n_f32(0);
-const static float m1 = (2610.0f / 4096.0f) / 4.0f;
-const static float m2 = (2523.0f / 4096.0f) * 128.0f;
-const static float32x4_t c1 = vdupq_n_f32(3424.0f / 4096.0f);
-const static float32x4_t c2 = vdupq_n_f32((2413.0f / 4096.0f) * 32.0f);
-const static float32x4_t c3 = vdupq_n_f32((2392.0f / 4096.0f) * 32.0f);
-const static float m2Power = 1.0f / m2;
-const static float m1Power = 1.0f / m1;
-
-const static float lumaScale = 10000.0f / sdrReferencePoint;
-
-__attribute__((always_inline))
-inline float32x4_t ToLinearPQ(const float32x4_t v) {
-    const float32x4_t rv = vmaxq_f32(v, zeros);
-    float32x4_t p = vpowq_f32(rv, m2Power);
-    return vcopysignq_f32(vmulq_n_f32(vpowq_f32(vdivq_f32(vmaxq_f32(vsubq_f32(p, c1), zeros), vmlsq_f32(c2, c3, p)), m1Power),
-                                      lumaScale), rv);
-}
-
-const static float32x4_t linearM = vdupq_n_f32(2.3f);
-const static float32x4_t linearM1 = vdupq_n_f32(0.8f);
-const static float32x4_t linearM2 = vdupq_n_f32(0.2f);
 
 __attribute__((always_inline))
 inline float32x4_t dcpi3GammaCorrection(float32x4_t linear) {
@@ -192,15 +165,34 @@ inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxCo
 __attribute__((always_inline))
 inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan, 
                               float32x4_t bChan,
-                              PQGammaCorrection gammaCorrection,
-                              ToneMapper* toneMapper) {
-    float32x4_t pqR = ToLinearPQ(rChan);
-    float32x4_t pqG = ToLinearPQ(gChan);
-    float32x4_t pqB = ToLinearPQ(bChan);
+                              ColorGammaCorrection gammaCorrection,
+                              ToneMapper* toneMapper, TransferFunction transfer) {
+    float32x4x4_t m;
+    if (transfer == PQ) {
+        float32x4_t pqR = ToLinearPQ(rChan, sdrReferencePoint);
+        float32x4_t pqG = ToLinearPQ(gChan, sdrReferencePoint);
+        float32x4_t pqB = ToLinearPQ(bChan, sdrReferencePoint);
 
-    float32x4x4_t m = {
-        pqR, pqG, pqB, vdupq_n_f32(0.0f)
-    };
+        m = {
+            pqR, pqG, pqB, vdupq_n_f32(0.0f)
+        };
+    } else if (transfer == HLG) {
+        float32x4_t pqR = HLGToLinear(rChan);
+        float32x4_t pqG = HLGToLinear(gChan);
+        float32x4_t pqB = HLGToLinear(bChan);
+
+        m = {
+            pqR, pqG, pqB, vdupq_n_f32(0.0f)
+        };
+    } else {
+        float32x4_t pqR = SMPTE428ToLinear(rChan);
+        float32x4_t pqG = SMPTE428ToLinear(gChan);
+        float32x4_t pqB = SMPTE428ToLinear(bChan);
+
+        m = {
+            pqR, pqG, pqB, vdupq_n_f32(0.0f)
+        };
+    }
     m = MatTransponseQF32(m);
 
     float32x4x4_t r = toneMapper->Execute(m);
@@ -227,7 +219,7 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
 
 #endif
 
-void TransferROW_U16(uint16_t *data, float maxColors, PQGammaCorrection gammaCorrection, float* primaries) {
+void TransferROW_U16(uint16_t *data, float maxColors, ColorGammaCorrection gammaCorrection, float* primaries) {
 //    auto r = (float) data[0];
 //    auto g = (float) data[1]);
 //    auto b = (float) data[2];
@@ -240,11 +232,18 @@ void TransferROW_U16(uint16_t *data, float maxColors, PQGammaCorrection gammaCor
 //    data[2] = float_to_half((float) smpte.b * scale);
 }
 
-void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorrection, ToneMapper* toneMapper) {
+void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCorrection, ToneMapper* toneMapper, TransferFunction transfer) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
-    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    TriStim smpte;
+    if (transfer == PQ) {
+        smpte = {ToLinearPQ(r, sdrReferencePoint), ToLinearPQ(g, sdrReferencePoint), ToLinearPQ(b, sdrReferencePoint)};
+    } else if (transfer == HLG) {
+        smpte = {HLGToLinear(r), HLGToLinear(g), HLGToLinear(b)};
+    } else {
+        smpte = {SMPTE428ToLinear(r), SMPTE428ToLinear(g), SMPTE428ToLinear(b)};
+    }
 
     r = smpte.r;
     g = smpte.g;
@@ -268,12 +267,12 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
     data[2] = (uint8_t) clamp((float) round(b * maxColors), 0.0f, maxColors);
 }
 
-@implementation PerceptualQuantinizer : NSObject
+@implementation HDRColorTransfer : NSObject
 
 #if __arm64__
 
 +(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth primaries:(float*)primaries
-                 space:(PQGammaCorrection)space components:(int)components toneMapper:(ToneMapper*)toneMapper {
+                 space:(ColorGammaCorrection)space components:(int)components toneMapper:(ToneMapper*)toneMapper function:(TransferFunction)function {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
@@ -293,7 +292,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
                 float16x8_t aChannels = rgbVector.val[3];
 
-                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper);
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function);
 
                 low = MatTransponseQF32(low);
 
@@ -301,7 +300,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 float16x4_t rw2 = vcvt_f16_f32(low.val[1]);
                 float16x4_t rw3 = vcvt_f16_f32(low.val[2]);
 
-                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper);
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function);
                 high = MatTransponseQF32(high);
                 float16x4_t rw12 = vcvt_f16_f32(high.val[0]);
                 float16x4_t rw22 = vcvt_f16_f32(high.val[1]);
@@ -322,14 +321,14 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 float32x4_t bChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[2]));
                 float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
 
-                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper);
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function);
 
                 float32x4x4_t m = {
                     low.val[0], low.val[1], low.val[2], low.val[3]
                 };
                 m = MatTransponseQF32(m);
 
-                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper);
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function);
 
                 float32x4x4_t highM = {
                     high.val[0], high.val[1], high.val[2], high.val[3]
@@ -347,7 +346,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
         }
 
         for (; x < width; ++x) {
-            TransferROW_U16HFloats(ptr16, space, primaries, toneMapper);
+            TransferROW_U16HFloats(ptr16, space, primaries, toneMapper, function);
             ptr16 += components;
         }
     });
@@ -355,8 +354,8 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
 
 +(void)transferNEONU8:(nonnull uint8_t*)data
                stride:(int)stride width:(int)width height:(int)height depth:(int)depth
-            primaries:(float*)primaries space:(PQGammaCorrection)space components:(int)components
-           toneMapper:(ToneMapper*)toneMapper {
+            primaries:(float*)primaries space:(ColorGammaCorrection)space components:(int)components
+           toneMapper:(ToneMapper*)toneMapper function:(TransferFunction)function {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
     const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
@@ -395,7 +394,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
                 float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -409,7 +408,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -423,7 +422,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -437,7 +436,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -487,7 +486,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
                 float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -501,7 +500,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -515,7 +514,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -529,7 +528,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -564,119 +563,30 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
         }
 
         for (; x < width; ++x) {
-            TransferROW_U8(ptr16, maxColors, space, toneMapper);
+            TransferROW_U8(ptr16, maxColors, space, toneMapper, function);
             ptr16 += components;
         }
     });
 }
 #endif
 
-+(bool)transferMetal: (nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height
-                 U16:(bool)U16
-               depth:(int)depth
-                half:(bool)half {
-    // Always unavailable on simulator, there is not reason to try
-#if TARGET_OS_SIMULATOR
-    return false;
-#endif
-#if __has_include(<Metal/Metal.h>)
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (!device) {
-        return false;
-    }
-
-    NSError *error = nil;
-    NSBundle *bundle = [NSBundle bundleForClass:[PerceptualQuantinizer class]];
-
-    id<MTLLibrary> library = [device newDefaultLibraryWithBundle:bundle error:&error];
-    if (error) {
-        return false;
-    }
-
-    auto functionName = @"SMPTE2084";
-    if (U16 && !half) {
-        functionName = @"SMPTE2084U16";
-    } else if (!U16) {
-        functionName = @"SMPTE2084U16";
-    }
-
-    id<MTLFunction> kernelFunction = [library newFunctionWithName:functionName];
-    if (!kernelFunction) {
-        return false;
-    }
-
-    id<MTLCommandQueue> commandQueue = [device newCommandQueue];
-    id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
-    if (error) {
-        return false;
-    }
-
-    MTLComputePipelineDescriptor *pipelineDesc = [[MTLComputePipelineDescriptor alloc] init];
-    pipelineDesc.computeFunction = kernelFunction;
-    id<MTLComputePipelineState> pipelineState = [device newComputePipelineStateWithFunction:kernelFunction error:&error];
-    if (error) {
-        return false;
-    }
-
-    auto pixelFormat = MTLPixelFormatRGBA16Float;
-    if (U16 && !half) {
-        pixelFormat = MTLPixelFormatRGBA16Uint;
-    } else if (!U16) {
-        pixelFormat = MTLPixelFormatRGBA8Uint;
-    }
-    auto textureDescriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pixelFormat
-                                                                                width:width height:height mipmapped:false];
-    [textureDescriptor setUsage:MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite];
-    auto texture = [device newTextureWithDescriptor:textureDescriptor];
-    if (!texture) {
-        return false;
-    }
-    auto region = MTLRegionMake2D(0, 0, width, height);
-    [texture replaceRegion:region mipmapLevel:0 withBytes:data bytesPerRow:stride];
-
-    NSUInteger dataSize = 4 * width * height * (U16 ? sizeof(uint16_t) : sizeof(uint8_t));
-
-    NSUInteger bufferSize = sizeof(int);
-    id<MTLBuffer> depthBuffer = [device newBufferWithLength:bufferSize options:MTLResourceStorageModeShared];
-    int* depthPointer = (int *)[depthBuffer contents];
-    *depthPointer = depth;
-
-    id<MTLComputeCommandEncoder> computeEncoder = [commandBuffer computeCommandEncoder];
-    [computeEncoder setComputePipelineState:pipelineState];
-    [computeEncoder setTexture:texture atIndex:0];
-    [computeEncoder setBuffer:depthBuffer offset:0 atIndex:0];
-
-    MTLSize threadsPerThreadgroup = MTLSizeMake(8, 8, 1);
-    MTLSize threadgroups = MTLSizeMake((width + 7) / 8, (height + 7) / 8, 1);
-    [computeEncoder dispatchThreadgroups:threadgroups threadsPerThreadgroup:threadsPerThreadgroup];
-    [computeEncoder endEncoding];
-
-    // Commit the command buffer
-    [commandBuffer commit];
-    [commandBuffer waitUntilCompleted];
-
-    [texture getBytes:data bytesPerRow:stride bytesPerImage:dataSize fromRegion:region mipmapLevel:0 slice:0];
-    return true;
-#else
-    return false;
-#endif
-}
-
 +(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
-     components:(int)components gammaCorrection:(PQGammaCorrection)gammaCorrection {
+     components:(int)components gammaCorrection:(ColorGammaCorrection)gammaCorrection function:(TransferFunction)function {
     auto ptr = reinterpret_cast<uint8_t *>(data);
     ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 250.0f, 250.0f);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
-                        depth:depth primaries:primaries space:gammaCorrection components:components toneMapper:toneMapper];
+                        depth:depth primaries:primaries space:gammaCorrection
+                   components:components toneMapper:toneMapper function:function];
         delete toneMapper;
         return;
     }
     if (!U16) {
         [self transferNEONU8:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
-                       depth:depth primaries:primaries space:gammaCorrection components:components toneMapper:toneMapper];
+                       depth:depth primaries:primaries space:gammaCorrection 
+                  components:components toneMapper:toneMapper function:function];
         delete toneMapper;
         return;
     }
@@ -689,7 +599,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
             auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
                 if (half) {
-                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper);
+                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper, function);
                 } else {
                     TransferROW_U16(ptr16, maxColors, gammaCorrection, primaries);
                 }
@@ -698,7 +608,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, PQGammaCorrection gammaCorre
         } else {
             auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
-                TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper);
+                TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper, function);
                 ptr16 += components;
             }
         }

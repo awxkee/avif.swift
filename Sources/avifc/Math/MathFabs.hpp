@@ -1,5 +1,5 @@
 //
-//  math_fabs.hpp
+//  MathFabs.hpp
 //  avif.swift [https://github.com/awxkee/avif.swift]
 //
 //  Created by Radzivon Bartoshyk on 10/10/2023.
