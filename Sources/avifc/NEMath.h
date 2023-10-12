@@ -229,8 +229,9 @@ static inline float16x8_t vclampq_n_f16(const float16x8_t t, const float16_t min
     const float vMin = min;
     const float vMax = max;
     const float32x4_t low = vclampq_n_f32(vcvt_f32_f16(vget_low_f16(t)), vMin, vMax);
-    const float32x4_t high = vclampq_n_f32(vcvt_f32_f16(vget_low_f16(t)), vMin, vMax);
-    return vcombine_f16(vcvt_f16_f32(low), vcvt_f16_f32(high));
+    const float32x4_t high = vclampq_n_f32(vcvt_f32_f16(vget_high_f16(t)), vMin, vMax);
+    const float16x8_t r = vcombine_f16(vcvt_f16_f32(low), vcvt_f16_f32(high));
+    return r;
 #endif
 }
 
