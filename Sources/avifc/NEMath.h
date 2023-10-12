@@ -38,6 +38,10 @@
 #pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
 #endif
 
+#if defined(__GNUC__) && defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
+#define FP16_FULL_SUPPORTED 1
+#endif
+
 /* Logarithm polynomial coefficients */
 static const std::array<float32x4_t, 8> log_tab =
 {
@@ -219,7 +223,15 @@ static inline float32x4_t vclampq_n_f32(const float32x4_t t, const float min, co
 
 __attribute__((always_inline))
 static inline float16x8_t vclampq_n_f16(const float16x8_t t, const float16_t min, const float16_t max) {
+#if FP16_FULL_SUPPORTED
     return vmaxq_f16(vminq_f16(t, vdupq_n_f16(max)), vdupq_n_f16(min));
+#else
+    const float vMin = min;
+    const float vMax = max;
+    const float32x4_t low = vclampq_n_f32(vcvt_f32_f16(vget_low_f16(t)), vMin, vMax);
+    const float32x4_t high = vclampq_n_f32(vcvt_f32_f16(vget_low_f16(t)), vMin, vMax);
+    return vcombine_f16(vcvt_f16_f32(low), vcvt_f16_f32(high));
+#endif
 }
 
 __attribute__((always_inline))
