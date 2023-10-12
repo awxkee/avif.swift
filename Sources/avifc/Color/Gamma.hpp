@@ -41,6 +41,7 @@ constexpr float alphaRec2020 = 1.09929682680944f;
 
 float LinearSRGBToSRGB(const float linearValue);
 float LinearRec2020ToRec2020(const float linear);
+float LinearITUR709ToITUR709(const float linear);
 float dciP3PQGammaCorrection(const float linear);
 
 #if __arm64__
@@ -51,14 +52,18 @@ float dciP3PQGammaCorrection(const float linear);
 static inline float32x4_t LinearITUR709ToITUR709(const float32x4_t linear) {
     const float32x4_t level = vdupq_n_f32(0.018);
 
-    uint32x4_t mask = vcgtq_f32(linear, level);
-    uint32x4_t maskHigh = vcltq_f32(linear, level);
+    const uint32x4_t mask = vcgtq_f32(linear, level);
+    const uint32x4_t maskHigh = vcltq_f32(linear, level);
 
-    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
-    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+    float32x4_t low = linear;
+    float32x4_t high = linear;
     low = vmulq_n_f32(low, 4.5f);
 
     high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), 1.099f), vdupq_n_f32(0.099f));
+
+    low = vbslq_f32(mask, vdupq_n_f32(0), low);
+    high = vbslq_f32(maskHigh, vdupq_n_f32(0), high);
+
     float32x4_t result = vmaxq_f32(vaddq_f32(low, high), vdupq_n_f32(0));
     return result;
 }
@@ -66,45 +71,32 @@ static inline float32x4_t LinearITUR709ToITUR709(const float32x4_t linear) {
 static inline float32x4_t LinearSRGBToSRGB(const float32x4_t linear) {
     const float32x4_t level = vdupq_n_f32(0.0031308);
 
-    uint32x4_t mask = vcgtq_f32(linear, level);
-    uint32x4_t maskHigh = vcltq_f32(linear, level);
+    const uint32x4_t mask = vcgtq_f32(linear, level);
+    const uint32x4_t maskHigh = vcltq_f32(linear, level);
 
-    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
-    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
+    float32x4_t low = linear;
+    float32x4_t high = linear;
     low = vmulq_n_f32(low, 12.92f);
 
     high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 1.0f/2.4f), 1.055f), vdupq_n_f32(0.055f));
+    low = vbslq_f32(mask, vdupq_n_f32(0), low);
+    high = vbslq_f32(maskHigh, vdupq_n_f32(0), high);
     float32x4_t result = vmaxq_f32(vaddq_f32(low, high), vdupq_n_f32(0));
     return result;
 }
 
 static inline float32x4_t LinearRec2020ToRec2020(const float32x4_t linear) {
-    uint32x4_t mask = vcgtq_f32(linear, vdupq_n_f32(betaRec2020));
-    uint32x4_t maskHigh = vcltq_f32(linear, vdupq_n_f32(betaRec2020));
+    const uint32x4_t mask = vcgtq_f32(linear, vdupq_n_f32(betaRec2020));
+    const uint32x4_t maskHigh = vcltq_f32(linear, vdupq_n_f32(betaRec2020));
 
-    float32x4_t low = vbslq_f32(mask, vdupq_n_f32(0), linear);
-    float32x4_t high = vbslq_f32(maskHigh, vdupq_n_f32(0), linear);
-
+    float32x4_t low = linear;
+    float32x4_t high = linear;
     low = vmulq_n_f32(low, 4.5f);
     constexpr float fk = alphaRec2020 - 1;
     high = vsubq_f32(vmulq_n_f32(vpowq_f32(high, 0.45f), alphaRec2020), vdupq_n_f32(fk));
-
+    low = vbslq_f32(mask, vdupq_n_f32(0), low);
+    high = vbslq_f32(maskHigh, vdupq_n_f32(0), high);
     return vaddq_f32(low, high);
-}
-
-__attribute__((always_inline))
-static inline float32x4_t applyMatrixNEON(vector<vector<float>> matrix, const float32x4_t v) {
-    const float32x4_t row1 = { matrix[0][0], matrix[0][1], matrix[0][2], 0.0f };
-    const float32x4_t row2 = { matrix[1][0], matrix[1][1], matrix[1][2], 0.0f };
-    const float32x4_t row3 = { matrix[2][0], matrix[2][1], matrix[2][2], 0.0f };
-    const float32x4_t v1 = vmulq_f32(v, row1);
-    const float32x4_t v2 = vmulq_f32(v, row2);
-    const float32x4_t v3 = vmulq_f32(v, row3);
-    const float r = vsumq_f32(v1);
-    const float g = vsumq_f32(v2);
-    const float b = vsumq_f32(v3);
-    const float32x4_t res = { r, g, b, 0.0f };
-    return res;
 }
 #endif
 

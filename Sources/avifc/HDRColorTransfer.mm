@@ -133,6 +133,10 @@ void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection
         data[0] = half(clamp(LinearSRGBToSRGB(r), 0.0f, 1.0f)).data_;
         data[1] = half(clamp(LinearSRGBToSRGB(g), 0.0f, 1.0f)).data_;
         data[2] = half(clamp(LinearSRGBToSRGB(b), 0.0f, 1.0f)).data_;
+    } else if (gammaCorrection == Rec709) {
+        data[0] = half(clamp(LinearITUR709ToITUR709(r), 0.0f, 1.0f)).data_;
+        data[1] = half(clamp(LinearITUR709ToITUR709(g), 0.0f, 1.0f)).data_;
+        data[2] = half(clamp(LinearITUR709ToITUR709(b), 0.0f, 1.0f)).data_;
     } else {
         data[0] = half(clamp(r, 0.0f, 1.0f)).data_;
         data[1] = half(clamp(g, 0.0f, 1.0f)).data_;
@@ -141,11 +145,6 @@ void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection
 }
 
 #if __arm64__
-
-__attribute__((always_inline))
-inline float32x4_t dcpi3GammaCorrection(float32x4_t linear) {
-    return vpowq_f32(linear, 1.0f/2.6f);
-}
 
 __attribute__((always_inline))
 inline void SetPixelsRGB(float16x4_t rgb, uint16_t *vector, int components) {
@@ -219,6 +218,11 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
         r.val[1] = vclampq_n_f32(LinearSRGBToSRGB(r.val[1]), 0.0f, 1.0f);
         r.val[2] = vclampq_n_f32(LinearSRGBToSRGB(r.val[2]), 0.0f, 1.0f);
         r.val[3] = vclampq_n_f32(LinearSRGBToSRGB(r.val[3]), 0.0f, 1.0f);
+    } else if (gammaCorrection == Rec709) {
+        r.val[0] = vclampq_n_f32(LinearITUR709ToITUR709(r.val[0]), 0.0f, 1.0f);
+        r.val[1] = vclampq_n_f32(LinearITUR709ToITUR709(r.val[1]), 0.0f, 1.0f);
+        r.val[2] = vclampq_n_f32(LinearITUR709ToITUR709(r.val[2]), 0.0f, 1.0f);
+        r.val[3] = vclampq_n_f32(LinearITUR709ToITUR709(r.val[3]), 0.0f, 1.0f);
     } else {
         r.val[0] = vclampq_n_f32(r.val[0], 0.0f, 1.0f);
         r.val[1] = vclampq_n_f32(r.val[1], 0.0f, 1.0f);
@@ -280,6 +284,10 @@ void TransferROW_U8(uint8_t *data, float maxColors,
         r = LinearSRGBToSRGB(r);
         g = LinearSRGBToSRGB(g);
         b = LinearSRGBToSRGB(b);
+    } else if (gammaCorrection == Rec709) {
+        r = LinearITUR709ToITUR709(r);
+        g = LinearITUR709ToITUR709(g);
+        b = LinearITUR709ToITUR709(b);
     }
 
     data[0] = (uint8_t) clamp((float) round(r * maxColors), 0.0f, maxColors);

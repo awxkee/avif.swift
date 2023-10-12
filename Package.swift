@@ -18,7 +18,7 @@ let package = Package(
         .package(url: "https://github.com/awxkee/libaom.swift.git", "1.0.0"..<"1.1.0"),
         .package(url: "https://github.com/awxkee/libdav1d.swift.git", "1.0.0"..<"1.1.0"),
         .package(url: "https://github.com/awxkee/libyuv.swift.git", "1.0.0"..<"1.1.0"),
-        .package(url: "https://github.com/awxkee/libwebp-ios.git", "1.0.0"..<"1.1.0"),
+        .package(url: "https://github.com/awxkee/libwebp-ios.git", "1.1.0"..<"1.2.0"),
         .package(url: "https://github.com/kean/Nuke.git", "12.0.0"..<"13.0.0")
     ],
     targets: [
@@ -39,7 +39,7 @@ let package = Package(
                     .product(name: "libaom", package: "libaom.swift"),
                                .product(name: "libdav1d", package: "libdav1d.swift"),
                                .product(name: "libyuv", package: "libyuv.swift"),
-                    .product(name: "libwebp", package: "libwebp-ios")],
+                    .product(name: "libwebp-ios", package: "libwebp-ios")],
                 publicHeadersPath: "include",
                 cSettings: [
                     .define("AVIF_CODEC_AOM_ENCODE", to: "1"),

@@ -222,6 +222,26 @@
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
                        gammaCorrection:gamma function:function matrix:nullptr];
+        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 /* Rec 709 */ &&
+                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
+            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
+            ColorGammaCorrection gamma = Rec709;
+            TransferFunction function;
+            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                function = PQ;
+            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
+                function = HLG;
+            } else {
+                function = SMPTE428;
+            }
+            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+                                stride:stride width:newWidth height:newHeight
+                                   U16:depth > 8 depth:depth half:depth > 8
+                             primaries:lumaPrimaries components:components
+                       gammaCorrection:gamma function:function matrix:nullptr];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
@@ -234,7 +254,7 @@
         } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428) {
-            // IF Transfer function but we don't know the color space the we will convert it always to display P3
+            // IF Transfer function but we don't know the color space the we will convert it always to Display P3
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
             ColorGammaCorrection gamma = DisplayP3;
             TransferFunction function;

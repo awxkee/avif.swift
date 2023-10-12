@@ -30,6 +30,14 @@
 #pragma clang fp contract(on) exceptions(ignore) reassociate(on)
 #endif
 
+float LinearITUR709ToITUR709(const float linear) {
+    if (linear <= 0.018f) {
+        return 4.5f * linear;
+    } else {
+        return 1.099f * powf_c(linear, 0.45f) - 0.099f;
+    }
+}
+
 float LinearSRGBToSRGB(const float linearValue) {
     if (linearValue <= 0.0031308) {
         return 12.92f * linearValue;

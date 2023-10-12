@@ -29,7 +29,7 @@
 #import "Colorspace.h"
 
 enum ColorGammaCorrection {
-    Linear, Rec2020, DisplayP3
+    Linear, Rec2020, DisplayP3, Rec709
 };
 
 enum TransferFunction {

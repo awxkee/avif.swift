@@ -200,9 +200,6 @@ static inline float32x4_t vlog10q_f32(float32x4_t x)
     poly = vmlaq_f32(poly, vcvtq_f32_s32(m), CONST_LOG10);
 
     return poly;
-//    static const float32x4_t CONST_LN10 = vdupq_n_f32(2.30258509299); // ln(2)
-//    const float32x4_t v = vlogq_f32(x);
-//    return vdivq_f32(v, CONST_LN10);
 }
 
 __attribute__((always_inline))
@@ -230,8 +227,7 @@ static inline float16x8_t vclampq_n_f16(const float16x8_t t, const float16_t min
     const float vMax = max;
     const float32x4_t low = vclampq_n_f32(vcvt_f32_f16(vget_low_f16(t)), vMin, vMax);
     const float32x4_t high = vclampq_n_f32(vcvt_f32_f16(vget_high_f16(t)), vMin, vMax);
-    const float16x8_t r = vcombine_f16(vcvt_f16_f32(low), vcvt_f16_f32(high));
-    return r;
+    return vcombine_f16(vcvt_f16_f32(low), vcvt_f16_f32(high));
 #endif
 }
 
@@ -253,12 +249,6 @@ static inline float32x4x4_t MatTransponseQF32(const float32x4x4_t matrix)
         vcombine_f32(vget_high_f32(row01.val[1]), vget_high_f32(row23.val[1]))
     };
     return r;
-}
-
-__attribute__((always_inline))
-static inline float32x4_t vreinhardq_f32(const float32x4_t t) {
-    float32x4_t v = vaddq_f32(t, vdupq_n_f32(1.0f));
-    return vdivq_f32(t, v);
 }
 
 __attribute__((always_inline))
