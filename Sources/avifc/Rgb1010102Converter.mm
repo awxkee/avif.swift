@@ -50,19 +50,20 @@ inline half loadHalf1010102(uint16_t t) {
 
 @implementation Rgb1010102Converter: NSObject
 
-+(bool)F16ToU16:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height components:(int)components {
++(bool)F16ToRGBA1010102Impl:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height components:(int)components {
     uint8_t* dstTrail = reinterpret_cast<uint8_t*>(dst);
     uint8_t* mSrc = reinterpret_cast<uint8_t*>(src);
     int newStride = width * sizeof(uint8_t) * 4;
     const float scale = 1.0f / float((1 << 10) - 1);
     const float maxColors = pow(2.0f, 10.0f) - 1;
     const float maxAlpha = 3;
-    const half halfAlpha = half(3);
     uint16_t alpha = 3;
 #if __arm64__
-    const float32x4_t vecMaxColors = vdupq_n_f32(pow(2.0f, 10.0f) - 1);
-    const uint32x4_t vecAlpha = vdupq_n_u32(alpha);
+    const float16_t maxColorsF16 = pow(2.0f, 10.0f) - 1;
+    const float16_t maxAlphaF16 = 3;
+    const float16x8_t vecMaxColors = vdupq_n_f16(maxColorsF16);
     auto allowNeon = components == 3 || components == 4;
+    const uint32x4_t alphaBitsMask = vdupq_n_u32(0b00000111);
 #endif
     for (int y = 0; y < height; ++y) {
         uint16_t* row = reinterpret_cast<uint16_t*>(mSrc);
@@ -78,42 +79,27 @@ inline half loadHalf1010102(uint16_t t) {
                     rgb = vld4q_f16(reinterpret_cast<float16_t*>(row));
                 } else {
                     float16x8x3_t rgbx3 = vld3q_f16(reinterpret_cast<float16_t*>(row));
-                    rgb = { rgbx3.val[0], rgbx3.val[1], rgbx3.val[2], vdupq_n_f16(halfAlpha) };
+                    const float16_t h = 1.0f;
+                    rgb = { rgbx3.val[0], rgbx3.val[1], rgbx3.val[2], vdupq_n_f16(h) };
                 }
 
-                uint32x4_t rLow = vcvtq_u32_f32(
-                                                vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(rgb.val[0])), vecMaxColors)),
-                                                              0, maxColors)
-                                                );
-                uint32x4_t rHigh = vcvtq_u32_f32(
-                                                 vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(rgb.val[0])), vecMaxColors)),
-                                                               0, maxColors)
-                                                 );
+                uint16x8x4_t rgbaU16;
+                rgbaU16.val[0] = vcvtq_u16_f16(vclampq_n_f16(vrndq_f16(vmulq_f16(rgb.val[0], vecMaxColors)), 0, maxColorsF16));
+                rgbaU16.val[1] = vcvtq_u16_f16(vclampq_n_f16(vrndq_f16(vmulq_f16(rgb.val[1], vecMaxColors)), 0, maxColorsF16));
+                rgbaU16.val[2] = vcvtq_u16_f16(vclampq_n_f16(vrndq_f16(vmulq_f16(rgb.val[2], vecMaxColors)), 0, maxColorsF16));
+                rgbaU16.val[3] = vcvtq_u16_f16(vclampq_n_f16(vrndq_f16(vmulq_n_f16(rgb.val[3], maxAlphaF16)), 0, maxAlphaF16));
 
-                uint32x4_t gLow = vcvtq_u32_f32(
-                                                vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(rgb.val[1])), vecMaxColors)),
-                                                              0, maxColors)
-                                                );
-                uint32x4_t gHigh = vcvtq_u32_f32(
-                                                 vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(rgb.val[1])), vecMaxColors)),
-                                                               0, maxColors)
-                                                 );
+                uint32x4_t rLow = vmovl_u16(vget_low_u16(rgbaU16.val[0]));
+                uint32x4_t rHigh = vmovl_u16(vget_high_u16(rgbaU16.val[0]));
 
-                uint32x4_t bLow = vcvtq_u32_f32(
-                                                vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_low_f16(rgb.val[2])), vecMaxColors)),
-                                                              0, maxColors)
-                                                );
-                uint32x4_t bHigh = vcvtq_u32_f32(
-                                                 vclampq_n_f32(vrndq_f32(vmulq_f32(vcvt_f32_f16(vget_high_f16(rgb.val[2])), vecMaxColors)),
-                                                               0, maxColors)
-                                                 );
+                uint32x4_t gLow = vmovl_u16(vget_low_u16(rgbaU16.val[1]));
+                uint32x4_t gHigh = vmovl_u16(vget_high_u16(rgbaU16.val[1]));
 
-                uint32x4_t aLow = vcvtq_u32_f32(
-                                                vclampq_n_f32(vrndq_f32(vmulq_n_f32(vcvt_f32_f16(vget_low_f16(rgb.val[3])), maxAlpha)), 0, maxAlpha)
-                                                );
-                uint32x4_t aHigh = vcvtq_u32_f32(
-                                                 vclampq_n_f32(vrndq_f32(vmulq_n_f32(vcvt_f32_f16(vget_high_f16(rgb.val[3])), maxAlpha)), 0, maxAlpha)
-                                                 );
+                uint32x4_t bLow = vmovl_u16(vget_low_u16(rgbaU16.val[2]));
+                uint32x4_t bHigh = vmovl_u16(vget_high_u16(rgbaU16.val[2]));
+
+                uint32x4_t aLow = vandq_u32(vmovl_u16(vget_low_u16(rgbaU16.val[3])), alphaBitsMask);
+                uint32x4_t aHigh = vandq_u32(vmovl_u16(vget_high_u16(rgbaU16.val[3])), alphaBitsMask);
 
                 uint32x4_t pixelsLow = vhtonlq_u32(vorrq_u32(vorrq_u32(vshlq_n_u32(rLow, 22), vshlq_n_u32(gLow, 12)),
                                                              vorrq_u32(vshlq_n_u32(bLow, 2), aLow)));
@@ -148,7 +134,7 @@ inline half loadHalf1010102(uint16_t t) {
 }
 
 +(bool)F16ToRGBA1010102:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(nonnull int*)stride width:(int)width height:(int)height components:(int)components {
-    if (![self F16ToU16:data dst:dst stride:*stride width:width height:height components:components]) {
+    if (![self F16ToRGBA1010102Impl:data dst:dst stride:*stride width:width height:height components:components]) {
         return false;
     }
 

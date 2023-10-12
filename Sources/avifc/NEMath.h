@@ -218,6 +218,11 @@ static inline float32x4_t vclampq_n_f32(const float32x4_t t, const float min, co
 }
 
 __attribute__((always_inline))
+static inline float16x8_t vclampq_n_f16(const float16x8_t t, const float16_t min, const float16_t max) {
+    return vmaxq_f16(vminq_f16(t, vdupq_n_f16(max)), vdupq_n_f16(min));
+}
+
+__attribute__((always_inline))
 static inline float32x4x4_t MatTransponseQF32(const float32x4x4_t matrix)
 {
     float32x4_t     row0 = matrix.val[0];
@@ -265,8 +270,31 @@ static inline float32x4_t vcopysignq_f32(const float32x4_t dst, const float32x4_
 
 __attribute__((always_inline))
 static inline float vsumq_f32(const float32x4_t v) {
-    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-    return vget_lane_f32(vpadd_f32(r, r), 0);
+//    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
+//    return vget_lane_f32(vpadd_f32(r, r), 0);
+    return vaddvq_f32(v);
+}
+
+__attribute__((always_inline))
+static inline float32x2_t vsumq_f32x2(const float32x4_t v, const float32x4_t v1) {
+//    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
+//    float32x2_t r1 = vadd_f32(vget_high_f32(v1), vget_low_f32(v1));
+//    r = vpadd_f32(r, r);
+//    r1 = vpadd_f32(r1, r1);
+//    r = vext_f32(r, vdup_n_f32(0), 1);
+//    r1 = vext_f32(vdup_n_f32(0), r1, 1);
+//    return vadd_f32(r, r1);
+    float32x2_t r = { vaddvq_f32(v), vaddvq_f32(v1) };
+    return r;
+}
+
+__attribute__((always_inline))
+static inline float32x4_t vsumq_f32x4(const float32x4_t v, const float32x4_t v1, const float32x4_t v2, const float32x4_t v3) {
+//    float32x2_t r = vsumq_f32x2(v, v1);
+//    float32x2_t r1 = vsumq_f32x2(v2, v3);
+//    return vcombine_f32(r, r1);
+    float32x4_t r = { vaddvq_f32(v), vaddvq_f32(v1), vaddvq_f32(v2), vaddvq_f32(v3) };
+    return r;
 }
 
 __attribute__((always_inline))

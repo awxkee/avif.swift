@@ -52,12 +52,13 @@ float32x4_t Rec2408ToneMapper::SDR(float32x4_t Lin) {
 }
 
 float32x4x4_t Rec2408ToneMapper::Execute(const float32x4x4_t m) {
-    const float32x4_t Lin = {
-        vsumq_f32(vmulq_f32(m.val[0], this->luma)),
-        vsumq_f32(vmulq_f32(m.val[1], this->luma)),
-        vsumq_f32(vmulq_f32(m.val[2], this->luma)),
-        vsumq_f32(vmulq_f32(m.val[3], this->luma)),
+    const float32x4x4_t lumas = {
+        vmulq_f32(m.val[0], luma),
+        vmulq_f32(m.val[1], luma),
+        vmulq_f32(m.val[2], luma),
+        vmulq_f32(m.val[3], luma),
     };
+    const float32x4_t Lin = vsumq_f32x4(lumas.val[0], lumas.val[1], lumas.val[2], lumas.val[3]);
     const float32x4_t Lout = vdivq_f32(vmlaq_f32(this->ones, this->aVec, Lin),
                                           vmlaq_f32(this->ones, this->bVec, Lin));
 
