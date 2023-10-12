@@ -32,6 +32,7 @@
 #import "TargetConditionals.h"
 #import "Rgb1010102Converter.h"
 #import "RgbTransfer.h"
+#import "Colorspace.h"
 
 @implementation AVIFImageXForm
 
@@ -151,8 +152,7 @@
                 bt2020 = CGColorSpaceCreateDeviceRGB();
             }
             colorSpace = bt2020;
-        }
-        else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
+        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                  (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
@@ -177,7 +177,7 @@
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function];
+                       gammaCorrection:gamma function:function matrix:nullptr];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                    transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             static CGColorSpaceRef bt2020linear = NULL;
@@ -221,7 +221,7 @@
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function];
+                       gammaCorrection:gamma function:function matrix:nullptr];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
@@ -231,8 +231,44 @@
                 p3linear = CGColorSpaceCreateDeviceRGB();
             }
             colorSpace = p3linear;
-        }
-        else {
+        } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
+                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
+                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428) {
+            // IF Transfer function but we don't know the color space the we will convert it always to display P3
+            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
+            ColorGammaCorrection gamma = DisplayP3;
+            TransferFunction function;
+            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
+                function = PQ;
+            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
+                function = HLG;
+            } else {
+                function = SMPTE428;
+            }
+            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+
+            float primaries[8];
+            avifColorPrimariesGetValues(colorPrimaries, &primaries[0]);
+
+            ColorSpaceMatrix displayP3Matrix = ColorSpaceMatrix(DisplayP3Primaries, IlluminantD65);
+            
+            const float primariesXy[3][2] = {
+                {primaries[0], primaries[1]},
+                {primaries[2], primaries[3]},
+                {primaries[4], primaries[5]},
+            };
+            const float whitePoint[2] = {primaries[6], primaries[7]};
+
+            ColorSpaceMatrix originalMatrix = ColorSpaceMatrix(primariesXy, whitePoint);
+            ColorSpaceMatrix transformation = displayP3Matrix.inverted() * originalMatrix;
+
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+                              stride:stride width:newWidth height:newHeight
+                              U16:depth > 8 depth:depth half:depth > 8
+                              primaries:lumaPrimaries components:components
+                              gammaCorrection:gamma function:function
+                              matrix:&transformation];
+        } else {
             colorSpace = CGColorSpaceCreateDeviceRGB();
         }
     }

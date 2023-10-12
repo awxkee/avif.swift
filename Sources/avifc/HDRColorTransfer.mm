@@ -101,7 +101,7 @@ float rec2020LumaPrimaries[3] = {0.2627, 0.6780, 0.0593};
 ToneMapper* hdrToneMapper = new ClampToneMapper(rec2020LumaPrimaries);
 
 void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection, const float* primaries,
-                            ToneMapper* toneMapper, TransferFunction transfer) {
+                            ToneMapper* toneMapper, TransferFunction transfer, ColorSpaceMatrix* matrix) {
     auto r = (float) loadHalf(data[0]);
     auto g = (float) loadHalf(data[1]);
     auto b = (float) loadHalf(data[2]);
@@ -120,6 +120,10 @@ void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection
 
     toneMapper->Execute(r, g, b);
     hdrToneMapper->Execute(r, g, b);
+
+    if (matrix) {
+        matrix->convert(r, g, b);
+    }
 
     if (gammaCorrection == Rec2020) {
         data[0] = half(clamp(LinearRec2020ToRec2020(r), 0.0f, 1.0f)).data_;
@@ -163,10 +167,12 @@ inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxCo
 }
 
 __attribute__((always_inline))
-inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan, 
+inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
                               float32x4_t bChan,
                               ColorGammaCorrection gammaCorrection,
-                              ToneMapper* toneMapper, TransferFunction transfer) {
+                              ToneMapper* toneMapper, 
+                              TransferFunction transfer,
+                              ColorSpaceMatrix* matrix) {
     float32x4x4_t m;
     if (transfer == PQ) {
         float32x4_t pqR = ToLinearPQ(rChan, sdrReferencePoint);
@@ -196,7 +202,13 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
     m = MatTransponseQF32(m);
 
     float32x4x4_t r = toneMapper->Execute(m);
+
     r = hdrToneMapper->Execute(r);
+
+    if (matrix) {
+        r = (*matrix) * r;
+    }
+
     if (gammaCorrection == Rec2020) {
         r.val[0] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[0]), 0.0f, 1.0f);
         r.val[1] = vclampq_n_f32(LinearRec2020ToRec2020(r.val[1]), 0.0f, 1.0f);
@@ -219,20 +231,24 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
 
 #endif
 
-void TransferROW_U16(uint16_t *data, float maxColors, ColorGammaCorrection gammaCorrection, float* primaries) {
-//    auto r = (float) data[0];
-//    auto g = (float) data[1]);
-//    auto b = (float) data[2];
-//    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b), primaries);
-//    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
-//    float pqLuma = Luma(smpte, primaries);
-//    float scale = luma / pqLuma;
-//    data[0] = float_to_half((float) smpte.r * scale);
-//    data[1] = float_to_half((float) smpte.g * scale);
-//    data[2] = float_to_half((float) smpte.b * scale);
+void TransferROW_U16(uint16_t *data, float maxColors, ColorGammaCorrection gammaCorrection, float* primaries, ColorSpaceMatrix* matrix) {
+    //    auto r = (float) data[0];
+    //    auto g = (float) data[1]);
+    //    auto b = (float) data[2];
+    //    float luma = Luma(ToLinearToneMap(r), ToLinearToneMap(g), ToLinearToneMap(b), primaries);
+    //    TriStim smpte = {ToLinearPQ(r), ToLinearPQ(g), ToLinearPQ(b)};
+    //    float pqLuma = Luma(smpte, primaries);
+    //    float scale = luma / pqLuma;
+    //    data[0] = float_to_half((float) smpte.r * scale);
+    //    data[1] = float_to_half((float) smpte.g * scale);
+    //    data[2] = float_to_half((float) smpte.b * scale);
 }
 
-void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCorrection, ToneMapper* toneMapper, TransferFunction transfer) {
+void TransferROW_U8(uint8_t *data, float maxColors,
+                    ColorGammaCorrection gammaCorrection,
+                    ToneMapper* toneMapper,
+                    TransferFunction transfer,
+                    ColorSpaceMatrix* matrix) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
@@ -251,6 +267,10 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
 
     toneMapper->Execute(r, g, b);
     hdrToneMapper->Execute(r, g, b);
+
+    if (matrix) {
+        matrix->convert(r, g, b);
+    }
 
     if (gammaCorrection == Rec2020) {
         r = LinearRec2020ToRec2020(r);
@@ -271,8 +291,13 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
 
 #if __arm64__
 
-+(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height depth:(int)depth primaries:(float*)primaries
-                 space:(ColorGammaCorrection)space components:(int)components toneMapper:(ToneMapper*)toneMapper function:(TransferFunction)function {
++(void)transferNEONF16:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height 
+                 depth:(int)depth primaries:(float*)primaries
+                 space:(ColorGammaCorrection)space
+                 components:(int)components
+                 toneMapper:(ToneMapper*)toneMapper
+                 function:(TransferFunction)function
+                 matrix:(ColorSpaceMatrix*)matrix {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
     dispatch_queue_t concurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
@@ -292,7 +317,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
                 float16x8_t aChannels = rgbVector.val[3];
 
-                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function);
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function, matrix);
 
                 low = MatTransponseQF32(low);
 
@@ -300,7 +325,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 float16x4_t rw2 = vcvt_f16_f32(low.val[1]);
                 float16x4_t rw3 = vcvt_f16_f32(low.val[2]);
 
-                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function);
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function, matrix);
                 high = MatTransponseQF32(high);
                 float16x4_t rw12 = vcvt_f16_f32(high.val[0]);
                 float16x4_t rw22 = vcvt_f16_f32(high.val[1]);
@@ -321,14 +346,14 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 float32x4_t bChannelsLow = vcvt_f32_f16(vget_low_f16(rgbVector.val[2]));
                 float32x4_t bChannelsHigh = vcvt_f32_f16(vget_high_f16(rgbVector.val[2]));
 
-                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function);
+                float32x4x4_t low = Transfer(rChannelsLow, gChannelsLow, bChannelsLow, space, toneMapper, function, matrix);
 
                 float32x4x4_t m = {
                     low.val[0], low.val[1], low.val[2], low.val[3]
                 };
                 m = MatTransponseQF32(m);
 
-                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function);
+                float32x4x4_t high = Transfer(rChannelsHigh, gChannelsHigh, bChannelsHigh, space, toneMapper, function, matrix);
 
                 float32x4x4_t highM = {
                     high.val[0], high.val[1], high.val[2], high.val[3]
@@ -346,7 +371,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
         }
 
         for (; x < width; ++x) {
-            TransferROW_U16HFloats(ptr16, space, primaries, toneMapper, function);
+            TransferROW_U16HFloats(ptr16, space, primaries, toneMapper, function, matrix);
             ptr16 += components;
         }
     });
@@ -355,7 +380,9 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
 +(void)transferNEONU8:(nonnull uint8_t*)data
                stride:(int)stride width:(int)width height:(int)height depth:(int)depth
             primaries:(float*)primaries space:(ColorGammaCorrection)space components:(int)components
-           toneMapper:(ToneMapper*)toneMapper function:(TransferFunction)function {
+           toneMapper:(ToneMapper*)toneMapper
+             function:(TransferFunction)function 
+               matrix:(ColorSpaceMatrix*)matrix {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
     const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
@@ -394,7 +421,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
                 float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -408,7 +435,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -422,7 +449,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -436,7 +463,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -486,7 +513,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
                 float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -500,7 +527,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -514,7 +541,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -528,7 +555,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
                 gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
                 bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                low = Transfer(rLow, gLow, bLow, space, toneMapper, function);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
                 rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
                 rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
                 rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
@@ -563,7 +590,7 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
         }
 
         for (; x < width; ++x) {
-            TransferROW_U8(ptr16, maxColors, space, toneMapper, function);
+            TransferROW_U8(ptr16, maxColors, space, toneMapper, function, matrix);
             ptr16 += components;
         }
     });
@@ -572,21 +599,22 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
 
 +(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
-     components:(int)components gammaCorrection:(ColorGammaCorrection)gammaCorrection function:(TransferFunction)function {
+     components:(int)components gammaCorrection:(ColorGammaCorrection)gammaCorrection
+       function:(TransferFunction)function matrix:(ColorSpaceMatrix*)matrix {
     auto ptr = reinterpret_cast<uint8_t *>(data);
     ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 250.0f, 250.0f);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
                         depth:depth primaries:primaries space:gammaCorrection
-                   components:components toneMapper:toneMapper function:function];
+                   components:components toneMapper:toneMapper function:function matrix:matrix];
         delete toneMapper;
         return;
     }
     if (!U16) {
         [self transferNEONU8:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height
-                       depth:depth primaries:primaries space:gammaCorrection 
-                  components:components toneMapper:toneMapper function:function];
+                       depth:depth primaries:primaries space:gammaCorrection
+                  components:components toneMapper:toneMapper function:function matrix:matrix];
         delete toneMapper;
         return;
     }
@@ -599,16 +627,16 @@ void TransferROW_U8(uint8_t *data, float maxColors, ColorGammaCorrection gammaCo
             auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
                 if (half) {
-                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper, function);
+                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper, function, matrix);
                 } else {
-                    TransferROW_U16(ptr16, maxColors, gammaCorrection, primaries);
+                    TransferROW_U16(ptr16, maxColors, gammaCorrection, primaries, matrix);
                 }
                 ptr16 += components;
             }
         } else {
             auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
             for (int x = 0; x < width; ++x) {
-                TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper, function);
+                TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper, function, matrix);
                 ptr16 += components;
             }
         }

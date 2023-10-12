@@ -26,6 +26,8 @@
 #ifndef PerceptualQuantinizer_h
 #define PerceptualQuantinizer_h
 
+#import "Colorspace.h"
+
 enum ColorGammaCorrection {
     Linear, Rec2020, DisplayP3
 };
@@ -39,7 +41,7 @@ enum TransferFunction {
         height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
         primaries:(nonnull float*)primaries components:(int)components
         gammaCorrection:(ColorGammaCorrection)gammaCorrection
-        function:(TransferFunction)function;
+        function:(TransferFunction)function matrix:(nullable ColorSpaceMatrix*)matrix;
 @end
 
 #endif /* PerceptualQuantinizer_h */
