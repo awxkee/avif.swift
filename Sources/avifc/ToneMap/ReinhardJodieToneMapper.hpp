@@ -34,7 +34,7 @@
 
 class ReinhardJodieToneMapper: public ToneMapper {
 public:
-    ReinhardJodieToneMapper(const bool extended = true): lumaVec { 0.2126, 0.7152, 0.0722 }, lumaMaximum(1.0f), exposure(1.2f) {
+    ReinhardJodieToneMapper(const bool extended = true): lumaVec { 0.2126, 0.7152, 0.0722 }, lumaMaximum(1.0f), exposure(1.0f) {
         useExtended = extended;
 #if __arm64__
         vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };

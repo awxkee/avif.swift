@@ -79,7 +79,7 @@ void ReinhardJodieToneMapper::Execute(float& r, float& g, float& b) {
 
 float32x4_t ReinhardJodieToneMapper::Execute(const float32x4_t m) {
     const float32x4_t v = vmulq_n_f32(m, exposure);
-    const float luma = vsumq_f32(vmulq_f32(v, vLumaVec));
+    const float luma = vaddvq_f32(vmulq_f32(v, vLumaVec));
 
     const float32x4_t tv = vdivq_f32(v, vaddq_f32(vdupq_n_f32(1.0f), v));
     const float32x4_t in = vdivq_f32(v, vdupq_n_f32(1.0f + luma));
@@ -94,24 +94,25 @@ float32x4x4_t ReinhardJodieToneMapper::Execute(const float32x4x4_t m) {
         vmulq_n_f32(m.val[3], exposure),
     };
     float32x4_t Lin = {
-        vsumq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
     };
     Lin = vaddq_f32(Lin, vdupq_n_f32(1.0f));
+    Lin = vrecpeq_f32(Lin);
 
     const float32x4_t tv1 = vdivq_f32(exposured.val[0], vaddq_f32(vdupq_n_f32(1.0f), exposured.val[0]));
-    const float32x4_t in1 = vdivq_f32(exposured.val[0], vdupq_n_f32(vgetq_lane_f32(Lin, 0)));
+    const float32x4_t in1 = vmulq_laneq_f32(exposured.val[0], Lin, 0);
 
     const float32x4_t tv2 = vdivq_f32(exposured.val[1], vaddq_f32(vdupq_n_f32(1.0f), exposured.val[1]));
-    const float32x4_t in2 = vdivq_f32(exposured.val[1], vdupq_n_f32(vgetq_lane_f32(Lin, 1)));
+    const float32x4_t in2 = vmulq_laneq_f32(exposured.val[1], Lin, 1);
 
     const float32x4_t tv3 = vdivq_f32(exposured.val[2], vaddq_f32(vdupq_n_f32(1.0f), exposured.val[2]));
-    const float32x4_t in3 = vdivq_f32(exposured.val[2], vdupq_n_f32(vgetq_lane_f32(Lin, 2)));
+    const float32x4_t in3 = vmulq_laneq_f32(exposured.val[2], Lin, 2);
 
     const float32x4_t tv4 = vdivq_f32(exposured.val[3], vaddq_f32(vdupq_n_f32(1.0f), exposured.val[3]));
-    const float32x4_t in4 = vdivq_f32(exposured.val[3], vdupq_n_f32(vgetq_lane_f32(Lin, 3)));
+    const float32x4_t in4 = vmulq_laneq_f32(exposured.val[3], Lin, 3);
 
     const float32x4x4_t res = {
         lerpNEON(in1, tv1, tv1),

@@ -44,9 +44,10 @@ static const float DisplayP3Primaries[3][2] = { { 0.740, 0.270 }, { 0.220, 0.780
 
 static const float Rec2020LumaPrimaries[3] = {0.2627f, 0.6780f, 0.0593f};
 static const float Rec709LumaPrimaries[3] = {0.2126f, 0.7152f, 0.0722f};
-static const float DisplayP3LumaPrimaries = 80;
-static const float Rec709WhitePointNits = 100;
+static const float DisplayP3LumaPrimaries[3] = {0.299f, 0.587f, 0.114f};
 static const float DisplayP3WhitePointNits = 80;
+static const float Rec709WhitePointNits = 100;
+static const float Rec2020WhitePointNits = 203;
 
 static const float IlluminantD65[2] = { 0.3127, 0.3290 };
 
@@ -157,7 +158,8 @@ public:
         const float32x4_t row2 = { matrix[3], matrix[4], matrix[5], 0.0f };
         const float32x4_t row3 = { matrix[6], matrix[7], matrix[8], 0.0f };
 
-        return vaddq_f32(vaddq_f32(vmulq_f32(v, row1), vmulq_f32(v, row2)), vmulq_f32(v, row3));
+        float32x4_t r = { vaddvq_f32(vmulq_f32(v, row1)), vaddvq_f32(vmulq_f32(v, row2)), vaddvq_f32(vmulq_f32(v, row3)), 0.0f };
+        return r;
     }
 
     inline float32x4_t operator*(const float32x4_t v) {
@@ -165,14 +167,15 @@ public:
         const float32x4_t row2 = { matrix[3], matrix[4], matrix[5], 0.0f };
         const float32x4_t row3 = { matrix[6], matrix[7], matrix[8], 0.0f };
 
-        return vaddq_f32(vaddq_f32(vmulq_f32(v, row1), vmulq_f32(v, row2)), vmulq_f32(v, row3));
+        float32x4_t r = { vaddvq_f32(vmulq_f32(v, row1)), vaddvq_f32(vmulq_f32(v, row2)), vaddvq_f32(vmulq_f32(v, row3)), 0.0f };
+        return r;
     }
 
     inline float32x4x4_t operator*(const float32x4x4_t v) {
-        const float32x4_t r1 = vaddq_f32(vaddq_f32(vmulq_f32(v.val[0], row1), vmulq_f32(v.val[0], row2)), vmulq_f32(v.val[1], row3));
-        const float32x4_t r2 = vaddq_f32(vaddq_f32(vmulq_f32(v.val[1], row1), vmulq_f32(v.val[1], row2)), vmulq_f32(v.val[1], row3));
-        const float32x4_t r3 = vaddq_f32(vaddq_f32(vmulq_f32(v.val[2], row1), vmulq_f32(v.val[2], row2)), vmulq_f32(v.val[2], row3));
-        const float32x4_t r4 = vaddq_f32(vaddq_f32(vmulq_f32(v.val[3], row1), vmulq_f32(v.val[3], row2)), vmulq_f32(v.val[3], row3));
+        const float32x4_t r1 = { vaddvq_f32(vmulq_f32(v.val[0], row1)), vaddvq_f32(vmulq_f32(v.val[0], row2)), vaddvq_f32(vmulq_f32(v.val[0], row3)), 0.0f };
+        const float32x4_t r2 = { vaddvq_f32(vmulq_f32(v.val[1], row1)), vaddvq_f32(vmulq_f32(v.val[1], row2)), vaddvq_f32(vmulq_f32(v.val[1], row3)), 0.0f };
+        const float32x4_t r3= { vaddvq_f32(vmulq_f32(v.val[2], row1)), vaddvq_f32(vmulq_f32(v.val[2], row2)), vaddvq_f32(vmulq_f32(v.val[2], row3)), 0.0f };
+        const float32x4_t r4 = { vaddvq_f32(vmulq_f32(v.val[3], row1)), vaddvq_f32(vmulq_f32(v.val[3], row2)), vaddvq_f32(vmulq_f32(v.val[3], row3)), 0.0f };
         float32x4x4_t r = { r1, r2, r3, r4 };
         return r;
     }
@@ -360,9 +363,12 @@ public:
     float whitePointNits;
 };
 
-static ColorSpaceProfile* rec2020Profile = new ColorSpaceProfile(Rec2020Primaries, IlluminantD65, Rec2020LumaPrimaries, 203);
-static ColorSpaceProfile* rec709Profile = new ColorSpaceProfile(Rec709Primaries, IlluminantD65, Rec709LumaPrimaries, 100);
-static ColorSpaceProfile* displayP3Profile = new ColorSpaceProfile(DisplayP3Primaries, IlluminantD65, Rec709LumaPrimaries, 80);
+static ColorSpaceProfile* rec2020Profile = new ColorSpaceProfile(Rec2020Primaries, IlluminantD65, 
+                                                                 Rec2020LumaPrimaries, Rec2020WhitePointNits);
+static ColorSpaceProfile* rec709Profile = new ColorSpaceProfile(Rec709Primaries, IlluminantD65, 
+                                                                Rec709LumaPrimaries, Rec709WhitePointNits);
+static ColorSpaceProfile* displayP3Profile = new ColorSpaceProfile(DisplayP3Primaries, IlluminantD65, 
+                                                                   DisplayP3LumaPrimaries, DisplayP3WhitePointNits);
 
 template <typename T>
 T lerp(const T& a, const T& b, float t) {

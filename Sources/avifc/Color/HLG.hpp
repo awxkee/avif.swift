@@ -46,7 +46,7 @@ static inline float32x4_t HLGToLinear(const float32x4_t v) {
     const float32x4_t vDivVec = vrecpeq_f32(vdupq_n_f32(a));
 
     float32x4_t high = vdivq_f32(vaddq_f32(vexpq_f32(vmulq_f32(vsubq_f32(v, vdupq_n_f32(c)), vDivVec)), vdupq_n_f32(b)), vdupq_n_f32(12.0f));
-    float32x4_t low = vmulq_f32(vmulq_f32(v, v), vdupq_n_f32(1.0f/3.0f));
+    float32x4_t low = vmulq_n_f32(vmulq_f32(v, v), 1.0f/3.0f);
 
     low = vbslq_f32(mask, vdupq_n_f32(0), low);
     high = vbslq_f32(maskHigh, vdupq_n_f32(0), high);

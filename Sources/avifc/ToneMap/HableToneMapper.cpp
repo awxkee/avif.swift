@@ -24,6 +24,7 @@
 //
 
 #include "HableToneMapper.hpp"
+#include "NEMath.h"
 
 #if defined(__clang__)
 #pragma clang fp contract(fast) exceptions(ignore) reassociate(on)

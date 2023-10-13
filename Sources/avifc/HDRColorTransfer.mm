@@ -49,6 +49,8 @@
 #import "ToneMap/ReinhardToneMapper.hpp"
 #import "ToneMap/ClampToneMapper.hpp"
 #import "ToneMap/ReinhardJodieToneMapper.hpp"
+#import "ToneMap/HableToneMapper.hpp"
+#import "ToneMap/DragoToneMapper.hpp"
 #import "half.hpp"
 #import "Color/Gamma.hpp"
 #import "Color/PQ.hpp"
@@ -308,7 +310,7 @@ void TransferROW_U8(uint8_t *data, float maxColors,
 
         auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
         int x;
-        for (x = 0; x + 8 < width / 2; x += 8) {
+        for (x = 0; x + 8 < width; x += 8) {
             if (components == 4) {
                 float16x8x4_t rgbVector = vld4q_f16(reinterpret_cast<const float16_t *>(ptr16));
 

@@ -46,9 +46,6 @@ public:
         this->b = 1.0f / (displayMaxBrightness/whitePoint);
         memcpy(this->lumaCoefficients, lumaCoefficients, sizeof(float)*3);
 #if __arm64__
-        this->aVec = vdupq_n_f32(a);
-        this->bVec = vdupq_n_f32(b);
-        this->ones = vdupq_n_f32(1.f);
         this->luma = { lumaCoefficients[0], lumaCoefficients[1], lumaCoefficients[2], 0.0f };
 #endif
     }
@@ -63,13 +60,8 @@ private:
     float Ld;
     float a;
     float b;
-    float SDR(float Lin);
     float lumaCoefficients[3];
 #if __arm64__
-    float32x4_t SDR(float32x4_t Lin);
-    float32x4_t aVec;
-    float32x4_t bVec;
-    float32x4_t ones;
     float32x4_t luma;
 #endif
 };

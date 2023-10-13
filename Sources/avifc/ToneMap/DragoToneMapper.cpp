@@ -68,15 +68,9 @@ void DragoToneMapper::Execute(float& r, float& g, float &b) {
 
 #if __arm64__
 
-__attribute__((always_inline))
-static inline float vsumq_f32Drago(const float32x4_t v) {
-    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-    return vget_lane_f32(vpadd_f32(r, r), 0);
-}
-
 float32x4_t DragoToneMapper::Execute(const float32x4_t m) {
     const float32x4_t v = vmulq_n_f32(m, exposure);
-    const float Lin = vsumq_f32Drago(vmulq_n_f32(vmulq_f32(v, vLumaVec), exposure));
+    const float Lin = vaddvq_f32(vmulq_n_f32(vmulq_f32(v, vLumaVec), exposure));
     if (Lin == 0) {
         return v;
     }

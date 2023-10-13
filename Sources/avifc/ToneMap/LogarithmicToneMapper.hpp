@@ -47,7 +47,7 @@ public:
         den = log10(1.0 + curve * Lmax_);
 #if __arm64__
         vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
-        vDenVec = vdupq_n_f32(den);
+        vDenVec = vdupq_n_f32(1.0f /den);
 #endif
     }
 
@@ -56,7 +56,7 @@ public:
         den = log10(1.0 + curve * Lmax_);
 #if __arm64__
         vLumaVec = { lumaVec[0], lumaVec[1], lumaVec[2], 0.0f };
-        vDenVec = vdupq_n_f32(den);
+        vDenVec = vdupq_n_f32(1.0f / den);
 #endif
     }
 

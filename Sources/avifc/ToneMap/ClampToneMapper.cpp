@@ -59,7 +59,7 @@ void ClampToneMapper::Execute(float& r, float& g, float &b) {
 
 float32x4_t ClampToneMapper::Execute(const float32x4_t m) {
     const float32x4_t v = vmulq_n_f32(m, exposure);
-    const float Lin = vsumq_f32(vmulq_f32(v, vLumaVec));
+    const float Lin = vaddvq_f32(vmulq_f32(v, vLumaVec));
     if (Lin == 0) {
         return v;
     }
@@ -89,10 +89,10 @@ float32x4x4_t ClampToneMapper::Execute(const float32x4x4_t m) {
     const float32x4_t Lout = vclampq_n_f32(vmulq_f32(Lin, vrecpeq_f32(vdupq_n_f32(Lmax_))), 0.0f, 1.0f);
     const float32x4_t scale = vdivq_f32(Lout, Lin);
     const float32x4x4_t r = {
-        vmulq_n_f32(exposured.val[0], vgetq_lane_f32(scale, 0)),
-        vmulq_n_f32(exposured.val[1], vgetq_lane_f32(scale, 1)),
-        vmulq_n_f32(exposured.val[2], vgetq_lane_f32(scale, 2)),
-        vmulq_n_f32(exposured.val[3], vgetq_lane_f32(scale, 3))
+        vmulq_laneq_f32(exposured.val[0], scale, 0),
+        vmulq_laneq_f32(exposured.val[1], scale, 1),
+        vmulq_laneq_f32(exposured.val[2], scale, 2),
+        vmulq_laneq_f32(exposured.val[3], scale, 3)
     };
     return r;
 }

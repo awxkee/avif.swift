@@ -31,49 +31,29 @@ using namespace std;
 
 #if __arm64__
 
-float Rec2408ToneMapper::SDR(float Lin) {
-    const float c1 = 107 / 128;
-    const float c2 = 2413 / 128;
-    const float c3 = 2392 / 128;
-    const float m1 = 1305 / 8192;
-    const float m2 = 2523 / 32;
-    const float v = pow(Lin / 10000, m1);
-    return pow((c1 + c2 * v) / (1 + c3 * v), m2);
-}
-
-float32x4_t Rec2408ToneMapper::SDR(float32x4_t Lin) {
-    const float c1 = 107 / 128;
-    const float c2 = 2413 / 128;
-    const float c3 = 2392 / 128;
-    const float m1 = 1305 / 8192;
-    const float m2 = 2523 / 32;
-    const float32x4_t v = vpowq_f32(vdivq_f32(Lin, vdupq_n_f32(10000)), m1);
-    return vpowq_f32(vdivq_f32(vmlaq_f32(vdupq_n_f32(c1), vdupq_n_f32(c2), v), vmlaq_f32(vdupq_n_f32(1), vdupq_n_f32(c3), v)), m2);
-}
-
 float32x4x4_t Rec2408ToneMapper::Execute(const float32x4x4_t m) {
-    const float32x4x4_t lumas = {
-        vmulq_f32(m.val[0], luma),
-        vmulq_f32(m.val[1], luma),
-        vmulq_f32(m.val[2], luma),
-        vmulq_f32(m.val[3], luma),
+    const float32x4_t lc = luma;
+    const float32x4_t Lin = {
+        vaddvq_f32(vmulq_f32(m.val[0], lc)),
+        vaddvq_f32(vmulq_f32(m.val[1], lc)),
+        vaddvq_f32(vmulq_f32(m.val[2], lc)),
+        vaddvq_f32(vmulq_f32(m.val[3], lc)),
     };
-    const float32x4_t Lin = vsumq_f32x4(lumas.val[0], lumas.val[1], lumas.val[2], lumas.val[3]);
-    const float32x4_t Lout = vdivq_f32(vmlaq_f32(this->ones, this->aVec, Lin),
-                                          vmlaq_f32(this->ones, this->bVec, Lin));
-
+    const float32x4_t ones = vdupq_n_f32(1.f);
+    const float32x4_t Lout = vmulq_f32(vmlaq_n_f32(ones, Lin, this->a),
+                                       vrecpeq_f32(vmlaq_n_f32(ones, Lin, this->b)));
     float32x4x4_t r = {
-        vmulq_n_f32(m.val[0], vgetq_lane_f32(Lout, 0)),
-        vmulq_n_f32(m.val[1], vgetq_lane_f32(Lout, 1)),
-        vmulq_n_f32(m.val[2], vgetq_lane_f32(Lout, 2)),
-        vmulq_n_f32(m.val[3], vgetq_lane_f32(Lout, 3))
+        vmulq_laneq_f32(m.val[0], Lout, 0),
+        vmulq_laneq_f32(m.val[1], Lout, 1),
+        vmulq_laneq_f32(m.val[2], Lout, 2),
+        vmulq_laneq_f32(m.val[3], Lout, 3)
     };
-    
+
     return r;
 }
 
 float32x4_t Rec2408ToneMapper::Execute(const float32x4_t m) {
-    const float Lin = vsumq_f32(vmulq_f32(m, this->luma));
+    const float Lin = vaddvq_f32(vmulq_f32(m, this->luma));
     if (Lin == 0) {
         return m;
     }

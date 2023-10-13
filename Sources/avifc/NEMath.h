@@ -272,13 +272,6 @@ static inline float32x4_t vcopysignq_f32(const float32x4_t dst, const float32x4_
 }
 
 __attribute__((always_inline))
-static inline float vsumq_f32(const float32x4_t v) {
-//    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-//    return vget_lane_f32(vpadd_f32(r, r), 0);
-    return vaddvq_f32(v);
-}
-
-__attribute__((always_inline))
 static inline float32x2_t vsumq_f32x2(const float32x4_t v, const float32x4_t v1) {
 //    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
 //    float32x2_t r1 = vadd_f32(vget_high_f32(v1), vget_low_f32(v1));
@@ -325,7 +318,7 @@ __attribute__((always_inline))
 static inline float vsumq_f16(const float16x8_t v) {
     const float32x4_t low = vcvt_f32_f16(vget_low_f16(v));
     const float32x4_t high = vcvt_f32_f16(vget_high_f16(v));
-    return vsumq_f32(vaddq_f32(high, low));
+    return vaddvq_f32(vaddq_f32(high, low));
 }
 
 __attribute__((always_inline))

@@ -75,7 +75,7 @@ void ReinhardToneMapper::Execute(float& r, float& g, float& b) {
 
 float32x4_t ReinhardToneMapper::Execute(const float32x4_t m) {
     const float32x4_t v = vmulq_n_f32(m, exposure);
-    const float luma = vsumq_f32(vmulq_f32(v, vLumaVec));
+    const float luma = vaddvq_f32(vmulq_f32(v, vLumaVec));
     if (luma == 0) {
         return m;
     }
@@ -95,19 +95,19 @@ float32x4x4_t ReinhardToneMapper::Execute(const float32x4x4_t m) {
         vmulq_n_f32(m.val[3], exposure),
     };
     float32x4_t Lin = {
-        vsumq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
-        vsumq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
+        vaddvq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
     };
     Lin = vsetq_if_f32(Lin, 0.0f, 1.0f);
     const float32x4_t Lout = vsetq_if_f32(reinhardNEON(Lin, lumaMaximum, useExtended), 0.0f, 1.0f);
     const float32x4_t scale = vdivq_f32(Lout, Lin);
     float32x4x4_t r = {
-        vmulq_n_f32(exposured.val[0], vgetq_lane_f32(scale, 0)),
-        vmulq_n_f32(exposured.val[1], vgetq_lane_f32(scale, 1)),
-        vmulq_n_f32(exposured.val[2], vgetq_lane_f32(scale, 2)),
-        vmulq_n_f32(exposured.val[3], vgetq_lane_f32(scale, 3)),
+        vmulq_laneq_f32(exposured.val[0], scale, 0),
+        vmulq_laneq_f32(exposured.val[1], scale, 1),
+        vmulq_laneq_f32(exposured.val[2], scale, 2),
+        vmulq_laneq_f32(exposured.val[3], scale, 3)
     };
     return r;
 }
