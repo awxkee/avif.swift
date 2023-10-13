@@ -32,7 +32,7 @@
 #import "TargetConditionals.h"
 #import "Rgb1010102Converter.h"
 #import "RgbTransfer.h"
-#import "Colorspace.h"
+#import "Color/Colorspace.h"
 
 @implementation AVIFImageXForm
 
@@ -177,7 +177,8 @@
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr];
+                       gammaCorrection:gamma function:function matrix:nullptr
+                               profile:rec2020Profile];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                    transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             static CGColorSpaceRef bt2020linear = NULL;
@@ -221,7 +222,8 @@
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr];
+                       gammaCorrection:gamma function:function matrix:nullptr
+                               profile:displayP3Profile];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 /* Rec 709 */ &&
                    (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
                     || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
@@ -241,7 +243,8 @@
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr];
+                       gammaCorrection:gamma function:function matrix:nullptr
+                               profile:rec709Profile];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
                  transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
@@ -269,8 +272,6 @@
 
             float primaries[8];
             avifColorPrimariesGetValues(colorPrimaries, &primaries[0]);
-
-            ColorSpaceMatrix displayP3Matrix = ColorSpaceMatrix(DisplayP3Primaries, IlluminantD65);
             
             const float primariesXy[3][2] = {
                 {primaries[0], primaries[1]},
@@ -280,14 +281,14 @@
             const float whitePoint[2] = {primaries[6], primaries[7]};
 
             ColorSpaceMatrix originalMatrix = ColorSpaceMatrix(primariesXy, whitePoint);
-            ColorSpaceMatrix transformation = displayP3Matrix.inverted() * originalMatrix;
+            ColorSpaceMatrix transformation = displayP3Profile->toMatrix().inverted() * originalMatrix;
 
             [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
                               stride:stride width:newWidth height:newHeight
                               U16:depth > 8 depth:depth half:depth > 8
                               primaries:lumaPrimaries components:components
                               gammaCorrection:gamma function:function
-                              matrix:&transformation];
+                              matrix:&transformation profile:displayP3Profile];
         } else {
             colorSpace = CGColorSpaceCreateDeviceRGB();
         }

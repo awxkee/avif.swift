@@ -42,7 +42,23 @@ static const float Rec709Primaries[3][2]  = { { 0.640, 0.330 }, { 0.300, 0.600 }
 static const float Rec2020Primaries[3][2] = { { 0.708, 0.292 }, { 0.170, 0.797 }, { 0.131, 0.046 } };
 static const float DisplayP3Primaries[3][2] = { { 0.740, 0.270 }, { 0.220, 0.780 }, { 0.090, -0.090 } };
 
+static const float Rec2020LumaPrimaries[3] = {0.2627f, 0.6780f, 0.0593f};
+static const float Rec709LumaPrimaries[3] = {0.2126f, 0.7152f, 0.0722f};
+static const float DisplayP3LumaPrimaries = 80;
+static const float Rec709WhitePointNits = 100;
+static const float DisplayP3WhitePointNits = 80;
+
 static const float IlluminantD65[2] = { 0.3127, 0.3290 };
+
+static float perceivedLightness(const float Y) {
+    // Send this function a luminance value between 0.0 and 1.0,
+    // and it returns L* which is "perceptual lightness"
+    if ( Y <= (216/24389)) {       // The CIE standard states 0.008856 but 216/24389 is the intent for 0.008856451679036
+        return Y * (24389/27);  // The CIE standard states 903.3, but 24389/27 is the intent, making 903.296296296296296
+    } else {
+        return pow(Y, (1.0f/3.0f)) * 116 - 16;
+    }
+}
 
 static vector<float> add(const vector<float>& vec, const float scalar) {
     vector<float> result(vec.size());
@@ -326,9 +342,27 @@ private:
 
 };
 
-inline float Luma(const vector<float>& v, const float* primaries) {
-    return v[0] * primaries[0] + v[1] * primaries[1] + v[2] * primaries[2];
-}
+class ColorSpaceProfile {
+public:
+    ColorSpaceProfile(const float primaries [3][2], const float illuminant[2], const float lumaCoefficients[3], const float whitePointNits): whitePointNits(whitePointNits) {
+        memcpy(this->primaries, primaries, sizeof(float)*3*2);
+        memcpy(this->illuminant, illuminant, sizeof(float)*2);
+        memcpy(this->lumaCoefficients, lumaCoefficients, sizeof(float)*3);
+    }
+
+    ColorSpaceMatrix toMatrix() {
+        return ColorSpaceMatrix(primaries, illuminant);
+    }
+
+    float primaries[3][2];
+    float illuminant[2];
+    float lumaCoefficients[3];
+    float whitePointNits;
+};
+
+static ColorSpaceProfile* rec2020Profile = new ColorSpaceProfile(Rec2020Primaries, IlluminantD65, Rec2020LumaPrimaries, 203);
+static ColorSpaceProfile* rec709Profile = new ColorSpaceProfile(Rec709Primaries, IlluminantD65, Rec709LumaPrimaries, 100);
+static ColorSpaceProfile* displayP3Profile = new ColorSpaceProfile(DisplayP3Primaries, IlluminantD65, Rec709LumaPrimaries, 80);
 
 template <typename T>
 T lerp(const T& a, const T& b, float t) {

@@ -84,7 +84,7 @@ float32x4_t Rec2408ToneMapper::Execute(const float32x4_t m) {
 #endif
 
 void Rec2408ToneMapper::Execute(float& r, float &g, float& b) {
-    const float Lin = r*0.2627 + g*0.6780 + b * 0.0593;
+    const float Lin = r*lumaCoefficients[0] + g*lumaCoefficients[1] + b * lumaCoefficients[2];
     if (Lin == 0) {
         return;
     }

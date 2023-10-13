@@ -43,7 +43,7 @@
 
 #import "NEMath.h"
 #import "Math/FastMath.hpp"
-#import "Colorspace.h"
+#import "Color/Colorspace.h"
 #import "ToneMap/Rec2408ToneMapper.hpp"
 #import "ToneMap/LogarithmicToneMapper.hpp"
 #import "ToneMap/ReinhardToneMapper.hpp"
@@ -96,15 +96,11 @@ inline half loadHalf(uint16_t t) {
     return f;
 }
 
-float rec2020LumaPrimaries[3] = {0.2627, 0.6780, 0.0593};
-
-ToneMapper* hdrToneMapper = new ClampToneMapper(rec2020LumaPrimaries);
-
 void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection, const float* primaries,
                             ToneMapper* toneMapper, TransferFunction transfer, ColorSpaceMatrix* matrix) {
-    auto r = (float) loadHalf(data[0]);
-    auto g = (float) loadHalf(data[1]);
-    auto b = (float) loadHalf(data[2]);
+    float r = (float) loadHalf(data[0]);
+    float g = (float) loadHalf(data[1]);
+    float b = (float) loadHalf(data[2]);
     TriStim smpte;
     if (transfer == PQ) {
         smpte = {ToLinearPQ(r, sdrReferencePoint), ToLinearPQ(g, sdrReferencePoint), ToLinearPQ(b, sdrReferencePoint)};
@@ -119,7 +115,6 @@ void TransferROW_U16HFloats(uint16_t *data, ColorGammaCorrection gammaCorrection
     b = smpte.b;
 
     toneMapper->Execute(r, g, b);
-    hdrToneMapper->Execute(r, g, b);
 
     if (matrix) {
         matrix->convert(r, g, b);
@@ -202,8 +197,6 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
 
     float32x4x4_t r = toneMapper->Execute(m);
 
-    r = hdrToneMapper->Execute(r);
-
     if (matrix) {
         r = (*matrix) * r;
     }
@@ -235,7 +228,10 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
 
 #endif
 
-void TransferROW_U16(uint16_t *data, float maxColors, ColorGammaCorrection gammaCorrection, float* primaries, ColorSpaceMatrix* matrix) {
+void TransferROW_U16(uint16_t *data, float maxColors,
+                     ColorGammaCorrection gammaCorrection,
+                     float* primaries,
+                     ColorSpaceMatrix* matrix) {
     //    auto r = (float) data[0];
     //    auto g = (float) data[1]);
     //    auto b = (float) data[2];
@@ -270,7 +266,6 @@ void TransferROW_U8(uint8_t *data, float maxColors,
     b = smpte.b;
 
     toneMapper->Execute(r, g, b);
-    hdrToneMapper->Execute(r, g, b);
 
     if (matrix) {
         matrix->convert(r, g, b);
@@ -313,7 +308,7 @@ void TransferROW_U8(uint8_t *data, float maxColors,
 
         auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
         int x;
-        for (x = 0; x + 8 < width; x += 8) {
+        for (x = 0; x + 8 < width / 2; x += 8) {
             if (components == 4) {
                 float16x8x4_t rgbVector = vld4q_f16(reinterpret_cast<const float16_t *>(ptr16));
 
@@ -607,10 +602,11 @@ void TransferROW_U8(uint8_t *data, float maxColors,
 
 +(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width height:(int)height
             U16:(bool)U16 depth:(int)depth half:(bool)half primaries:(float*)primaries
-     components:(int)components gammaCorrection:(ColorGammaCorrection)gammaCorrection
-       function:(TransferFunction)function matrix:(ColorSpaceMatrix*)matrix {
+            components:(int)components gammaCorrection:(ColorGammaCorrection)gammaCorrection
+            function:(TransferFunction)function matrix:(ColorSpaceMatrix*)matrix
+            profile:(ColorSpaceProfile*)profile {
     auto ptr = reinterpret_cast<uint8_t *>(data);
-    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, 250.0f, 250.0f);
+    ToneMapper* toneMapper = new Rec2408ToneMapper(1000.0f, profile->whitePointNits, profile->whitePointNits, profile->lumaCoefficients);
 #if __arm64__
     if (U16 && half) {
         [self transferNEONF16:reinterpret_cast<uint8_t*>(data) stride:stride width:width height:height

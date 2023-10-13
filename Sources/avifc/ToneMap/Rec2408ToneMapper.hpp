@@ -29,6 +29,7 @@
 #include "ToneMapper.hpp"
 
 #include <stdio.h>
+#include <memory>
 
 #if __arm64__
 #include <arm_neon.h>
@@ -38,14 +39,17 @@ class Rec2408ToneMapper: public ToneMapper {
 public:
     Rec2408ToneMapper(const float contentMaxBrightness,
                       const float displayMaxBrightness,
-                      const float whitePoint): ToneMapper() {
+                      const float whitePoint,
+                      const float lumaCoefficients[3]): ToneMapper() {
         this->Ld = contentMaxBrightness / whitePoint;
         this->a = (displayMaxBrightness/whitePoint) / (Ld*Ld);
         this->b = 1.0f / (displayMaxBrightness/whitePoint);
+        memcpy(this->lumaCoefficients, lumaCoefficients, sizeof(float)*3);
 #if __arm64__
         this->aVec = vdupq_n_f32(a);
         this->bVec = vdupq_n_f32(b);
         this->ones = vdupq_n_f32(1.f);
+        this->luma = { lumaCoefficients[0], lumaCoefficients[1], lumaCoefficients[2], 0.0f };
 #endif
     }
 
@@ -60,12 +64,13 @@ private:
     float a;
     float b;
     float SDR(float Lin);
+    float lumaCoefficients[3];
 #if __arm64__
     float32x4_t SDR(float32x4_t Lin);
     float32x4_t aVec;
     float32x4_t bVec;
     float32x4_t ones;
-    const float32x4_t luma = { 0.2627, 0.6780, 0.0593, 0.0f };
+    float32x4_t luma;
 #endif
 };
 

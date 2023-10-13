@@ -26,7 +26,7 @@
 #ifndef PerceptualQuantinizer_h
 #define PerceptualQuantinizer_h
 
-#import "Colorspace.h"
+#import "Color/Colorspace.h"
 
 enum ColorGammaCorrection {
     Linear, Rec2020, DisplayP3, Rec709
@@ -38,10 +38,12 @@ enum TransferFunction {
 
 @interface HDRColorTransfer : NSObject
 +(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width
-        height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
-        primaries:(nonnull float*)primaries components:(int)components
-        gammaCorrection:(ColorGammaCorrection)gammaCorrection
-        function:(TransferFunction)function matrix:(nullable ColorSpaceMatrix*)matrix;
+         height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
+      primaries:(nonnull float*)primaries components:(int)components
+gammaCorrection:(ColorGammaCorrection)gammaCorrection
+       function:(TransferFunction)function
+         matrix:(nullable ColorSpaceMatrix*)matrix
+        profile:(nonnull ColorSpaceProfile*)profile;
 @end
 
 #endif /* PerceptualQuantinizer_h */
