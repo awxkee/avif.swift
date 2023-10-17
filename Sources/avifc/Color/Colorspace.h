@@ -199,10 +199,9 @@ public:
     inline void convert(float& r, float& g, float& b) {
 #if __arm64
         float32x4_t v = { r, g, b, 0.0f };
-        v = vaddq_f32(vaddq_f32(vmulq_f32(v, row1), vmulq_f32(v, row2)), vmulq_f32(v, row3));
-        r = vgetq_lane_f32(v, 0);
-        g = vgetq_lane_f32(v, 1);
-        b = vgetq_lane_f32(v, 2);
+        r = vdot_f32(v, row1);
+        g = vdot_f32(v, row2);
+        b = vdot_f32(v, row3);
 #else
         const float newR = matrix[0]*r + matrix[1]*g + matrix[2]*b;
         const float newG = matrix[3]*r + matrix[4]*g + matrix[5]*b;

@@ -106,12 +106,20 @@
     }
 }
 
+- (void)setLoopsCount:(NSInteger)loopsCount {
+    if (encoder) {
+        encoder->repetitionCount = static_cast<int>(loopsCount);
+    }
+}
+
 - (NSData* _Nullable)encode:(NSError * _Nullable *_Nullable)error {
     avifRWData avifOutput = AVIF_DATA_EMPTY;
     avifResult finishResult = avifEncoderFinish(encoder, &avifOutput);
     if (finishResult != AVIF_RESULT_OK) {
         [self cleanUp];
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"encoding failed with result: %s", avifResultToString(finishResult)] }];
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" 
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"encoding failed with result: %s", avifResultToString(finishResult)] }];
         return nil;
     }
     

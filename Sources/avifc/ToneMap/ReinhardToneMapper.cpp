@@ -95,10 +95,10 @@ float32x4x4_t ReinhardToneMapper::Execute(const float32x4x4_t m) {
         vmulq_n_f32(m.val[3], exposure),
     };
     float32x4_t Lin = {
-        vaddvq_f32(vmulq_f32(exposured.val[0], vLumaVec)),
-        vaddvq_f32(vmulq_f32(exposured.val[1], vLumaVec)),
-        vaddvq_f32(vmulq_f32(exposured.val[2], vLumaVec)),
-        vaddvq_f32(vmulq_f32(exposured.val[3], vLumaVec)),
+        vdot_f32(exposured.val[0], vLumaVec),
+        vdot_f32(exposured.val[1], vLumaVec),
+        vdot_f32(exposured.val[2], vLumaVec),
+        vdot_f32(exposured.val[3], vLumaVec),
     };
     Lin = vsetq_if_f32(Lin, 0.0f, 1.0f);
     const float32x4_t Lout = vsetq_if_f32(reinhardNEON(Lin, lumaMaximum, useExtended), 0.0f, 1.0f);

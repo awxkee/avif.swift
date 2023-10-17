@@ -34,10 +34,10 @@ using namespace std;
 float32x4x4_t Rec2408ToneMapper::Execute(const float32x4x4_t m) {
     const float32x4_t lc = luma;
     const float32x4_t Lin = {
-        vaddvq_f32(vmulq_f32(m.val[0], lc)),
-        vaddvq_f32(vmulq_f32(m.val[1], lc)),
-        vaddvq_f32(vmulq_f32(m.val[2], lc)),
-        vaddvq_f32(vmulq_f32(m.val[3], lc)),
+        vdot_f32(m.val[0], lc),
+        vdot_f32(m.val[1], lc),
+        vdot_f32(m.val[2], lc),
+        vdot_f32(m.val[3], lc),
     };
     const float32x4_t ones = vdupq_n_f32(1.f);
     const float32x4_t Lout = vmulq_f32(vmlaq_n_f32(ones, Lin, this->a),

@@ -42,6 +42,8 @@
 #define FP16_FULL_SUPPORTED 1
 #endif
 
+static inline float32x4_t vltq_n_f32(const float32x4_t& inputVector, const float ifValue, const float newValue);
+
 /* Logarithm polynomial coefficients */
 static const std::array<float32x4_t, 8> log_tab =
 {
@@ -232,7 +234,7 @@ static inline float16x8_t vclampq_n_f16(const float16x8_t t, const float16_t min
 }
 
 __attribute__((always_inline))
-static inline float32x4x4_t MatTransponseQF32(const float32x4x4_t matrix)
+static inline float32x4x4_t vtransposeq_f32(const float32x4x4_t matrix)
 {
     float32x4_t     row0 = matrix.val[0];
     float32x4_t     row1 = matrix.val[1];
@@ -252,6 +254,101 @@ static inline float32x4x4_t MatTransponseQF32(const float32x4x4_t matrix)
 }
 
 __attribute__((always_inline))
+static inline uint8x8x4_t vtranspose_u8(const uint8x8x4_t matrix) {
+    const uint8x8x2_t b0 = vtrn_u8(matrix.val[0], matrix.val[1]);
+    const uint8x8x2_t b1 = vtrn_u8(matrix.val[0], matrix.val[1]);
+
+
+    const uint16x4x2_t c0 =
+        vtrn_u16(vreinterpret_u16_u8(b0.val[0]), vreinterpret_u16_u8(b1.val[0]));
+    const uint16x4x2_t c1 =
+        vtrn_u16(vreinterpret_u16_u8(b0.val[1]), vreinterpret_u16_u8(b1.val[1]));
+
+    uint8x8_t a0 = vreinterpret_u8_u16(c0.val[0]);
+    uint8x8_t a1 = vreinterpret_u8_u16(c1.val[0]);
+    uint8x8_t a2 = vreinterpret_u8_u16(c0.val[1]);
+    uint8x8_t a3 = vreinterpret_u8_u16(c1.val[1]);
+    uint8x8x4_t r = {a0, a1, a2, a3};
+    return r;
+}
+
+__attribute__((always_inline))
+static inline uint8x16x4_t vtransposeq_u8(const uint8x16x4_t matrix) {
+    const uint8x16x2_t b0 = vtrnq_u8(matrix.val[0], matrix.val[1]);
+    const uint8x16x2_t b1 = vtrnq_u8(matrix.val[2], matrix.val[3]);
+
+    const uint16x8x2_t c0 = vtrnq_u16(vreinterpretq_u16_u8(b0.val[0]),
+                                      vreinterpretq_u16_u8(b1.val[0]));
+    const uint16x8x2_t c1 = vtrnq_u16(vreinterpretq_u16_u8(b0.val[1]),
+                                      vreinterpretq_u16_u8(b1.val[1]));
+
+    const uint32x4x2_t d0 = vtrnq_u32(vreinterpretq_u32_u16(c0.val[0]),
+                                      vreinterpretq_u32_u16(c1.val[0]));
+    const uint32x4x2_t d1 = vtrnq_u32(vreinterpretq_u32_u16(c0.val[1]),
+                                      vreinterpretq_u32_u16(c1.val[1]));
+
+    uint8x16x2_t dc0;
+    dc0.val[0] = vreinterpretq_u8_u32(d0.val[0]);
+    dc0.val[1] = vreinterpretq_u8_u32(d0.val[1]);
+
+    uint8x16x2_t dc1;
+    dc1.val[0] = vreinterpretq_u8_u32(d1.val[0]);
+    dc1.val[1] = vreinterpretq_u8_u32(d1.val[1]);
+
+    uint8x16x4_t rs = {
+        vcombine_u8(vget_low_u8(dc0.val[0]), vget_low_u8(dc1.val[0])),
+        vcombine_u8(vget_low_u8(dc0.val[1]), vget_low_u8(dc1.val[1])),
+        vcombine_u8(vget_high_u8(dc0.val[0]), vget_high_u8(dc1.val[0])),
+        vcombine_u8(vget_high_u8(dc0.val[1]), vget_high_u8(dc1.val[1])),
+    };
+    return rs;
+}
+
+__attribute__((always_inline))
+static inline float16x8x4_t vtransposeq_f16(const float16x8x4_t matrix)
+{
+#if FP16_FULL_SUPPORTED
+    float16x8x2_t r1 = vtrnq_f16(matrix.val[0], matrix.val[1]);
+    float16x8x2_t r2 = vtrnq_f16(matrix.val[2], matrix.val[3]);
+
+    const uint32x4x2_t c0 = vtrnq_u32(vreinterpretq_u32_u16(vreinterpretq_u16_f16(r1.val[0])),
+                                      vreinterpretq_u32_u16(vreinterpretq_u16_f16(r2.val[0])));
+    const uint32x4x2_t c1 = vtrnq_u32(vreinterpretq_u32_u16(vreinterpretq_u16_f16(r1.val[1])),
+                                      vreinterpretq_u32_u16(vreinterpretq_u16_f16(r2.val[1])));
+
+    float16x8_t rw1 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c0.val[0]));
+    float16x8_t rw2 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c0.val[1]));
+    float16x8_t rw3 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c1.val[0]));
+    float16x8_t rw4 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c1.val[1]));
+
+    float16x8x4_t transposed = {
+        rw1, rw3, rw2, rw4
+    };
+
+    return transposed;
+#else
+    uint16x8x2_t r1 = vtrnq_u16(vreinterpretq_u16_f16(matrix.val[0]), vreinterpretq_u16_f16(matrix.val[1]));
+    uint16x8x2_t r2 = vtrnq_u16(vreinterpretq_u16_f16(matrix.val[2]), vreinterpretq_u16_f16(matrix.val[3]));
+
+    const uint32x4x2_t c0 = vtrnq_u32(vreinterpretq_u32_u16(r1.val[0]),
+                                      vreinterpretq_u32_u16(r2.val[0]));
+    const uint32x4x2_t c1 = vtrnq_u32(vreinterpretq_u32_u16(r1.val[1]),
+                                      vreinterpretq_u32_u16(r2.val[1]));
+
+    float16x8_t rw1 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c0.val[0]));
+    float16x8_t rw2 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c0.val[1]));
+    float16x8_t rw3 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c1.val[0]));
+    float16x8_t rw4 = vreinterpretq_f16_u16(vreinterpretq_u16_u32(c1.val[1]));
+
+    float16x8x4_t transposed = {
+        rw1, rw3, rw2, rw4
+    };
+
+    return transposed;
+#endif
+}
+
+__attribute__((always_inline))
 static inline uint32x4_t vhtonlq_u32(const uint32x4_t hostlong) {
     uint8x8_t low = vreinterpret_u8_u32(vget_low_u32(hostlong));
     uint8x8_t high = vreinterpret_u8_u32(vget_high_u32(hostlong));
@@ -266,29 +363,25 @@ static inline uint32x4_t vhtonlq_u32(const uint32x4_t hostlong) {
 __attribute__((always_inline))
 static inline float32x4_t vcopysignq_f32(const float32x4_t dst, const float32x4_t src) {
     // Create a mask where each element is 1 if the sign is negative, otherwise 0
-     uint32x4_t mask = vcltq_f32(src, vdupq_n_f32(0.0f));
-     // Use vbslq_f32 to copy the sign
-     return vbslq_f32(mask, vnegq_f32(dst), dst);
+    uint32x4_t mask = vcltq_f32(src, vdupq_n_f32(0.0f));
+    return vbslq_f32(mask, vnegq_f32(dst), dst);
 }
 
 __attribute__((always_inline))
 static inline float32x2_t vsumq_f32x2(const float32x4_t v, const float32x4_t v1) {
-//    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
-//    float32x2_t r1 = vadd_f32(vget_high_f32(v1), vget_low_f32(v1));
-//    r = vpadd_f32(r, r);
-//    r1 = vpadd_f32(r1, r1);
-//    r = vext_f32(r, vdup_n_f32(0), 1);
-//    r1 = vext_f32(vdup_n_f32(0), r1, 1);
-//    return vadd_f32(r, r1);
+    //    float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
+    //    float32x2_t r1 = vadd_f32(vget_high_f32(v1), vget_low_f32(v1));
+    //    r = vpadd_f32(r, r);
+    //    r1 = vpadd_f32(r1, r1);
+    //    r = vext_f32(r, vdup_n_f32(0), 1);
+    //    r1 = vext_f32(vdup_n_f32(0), r1, 1);
+    //    return vadd_f32(r, r1);
     float32x2_t r = { vaddvq_f32(v), vaddvq_f32(v1) };
     return r;
 }
 
 __attribute__((always_inline))
 static inline float32x4_t vsumq_f32x4(const float32x4_t v, const float32x4_t v1, const float32x4_t v2, const float32x4_t v3) {
-//    float32x2_t r = vsumq_f32x2(v, v1);
-//    float32x2_t r1 = vsumq_f32x2(v2, v3);
-//    return vcombine_f32(r, r1);
     float32x4_t r = { vaddvq_f32(v), vaddvq_f32(v1), vaddvq_f32(v2), vaddvq_f32(v3) };
     return r;
 }
@@ -324,6 +417,11 @@ static inline float vsumq_f16(const float16x8_t v) {
 __attribute__((always_inline))
 static inline float16x8_t vdupq_n_f16_f32(const float v) {
     return vcombine_f16(vcvt_f16_f32(vdupq_n_f32(v)), vcvt_f16_f32(vdupq_n_f32(v)));
+}
+
+__attribute__((always_inline))
+static inline float vdot_f32(const float32x4_t v, const float32x4_t r) {
+    return vaddvq_f32(vmulq_f32(v, r));
 }
 
 #endif

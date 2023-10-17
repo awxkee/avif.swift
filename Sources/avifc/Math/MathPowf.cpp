@@ -25,13 +25,13 @@
 
 #include "MathPowf.hpp"
 /*
-Based on x ^ n = exp(n * log(x))
+ Based on x ^ n = exp(n * log(x))
 
-Test func : powf(x, n)
-Test Range: (1,1) < (x, n) < (10, 10)
-Peak Error:    ~0.0010%
-RMS  Error: ~0.0002%
-*/
+ Test func : powf(x, n)
+ Test Range: (1,1) < (x, n) < (10, 10)
+ Peak Error:    ~0.0010%
+ RMS  Error: ~0.0002%
+ */
 
 #include "math.h"
 
@@ -98,7 +98,7 @@ float powf_c(float x, float n)
     //Range Reduction:
     m = (int) (r.f * __powf_rng[0]);
     r.f = r.f - ((float) m) * __powf_rng[1];
-
+    
     //Taylor Polynomial (Estrins)
     a = (__powf_lut[12] * r.f) + (__powf_lut[8]);
     b = (__powf_lut[14] * r.f) + (__powf_lut[10]);

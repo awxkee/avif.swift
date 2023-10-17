@@ -25,14 +25,55 @@
 
 import Foundation
 
-public struct AVIFReadError: Error, Equatable { }
-public struct OpenStreamError: Error, Equatable { }
-public struct AVIFDecodingError: Error, Equatable { }
+public struct AVIFReadError: LocalizedError, CustomNSError { 
+    public var errorDescription: String {
+        "Can't read AVIF data"
+    }
 
-public struct AVIFUnderlyingError: LocalizedError {
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: errorDescription]
+    }
+}
+
+public struct OpenStreamError: LocalizedError, CustomNSError {
+    public var errorDescription: String {
+        "Can't open AVIF Stream"
+    }
+
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: errorDescription]
+    }
+}
+
+public struct AVIFDecodingError: LocalizedError, CustomNSError {
+    public var errorDescription: String {
+        "Can't decode AVIF"
+    }
+
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: errorDescription]
+    }
+}
+
+public struct AVIFFrameDecodingError: LocalizedError, CustomNSError {
+    public var frame: Int
+    public var errorDescription: String {
+        "Can't decode frame at index: \(frame) in AVIF"
+    }
+
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: errorDescription]
+    }
+}
+
+public struct AVIFUnderlyingError: LocalizedError, CustomNSError {
     let underlyingError: String
     
-    public var errorDescription: String? {
+    public var errorDescription: String {
         underlyingError
+    }
+
+    public var errorUserInfo: [String : Any] {
+        [NSLocalizedDescriptionKey: errorDescription]
     }
 }

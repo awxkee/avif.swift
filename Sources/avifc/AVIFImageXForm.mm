@@ -64,7 +64,7 @@
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
     
     auto imageUsesAlpha = decoder->image->imageOwnsAlphaPlane || decoder->image->alphaPlane != nullptr;
-    
+
     int components = imageUsesAlpha ? 4 : 3;
     
     auto colorPrimaries = decoder->image->colorPrimaries;

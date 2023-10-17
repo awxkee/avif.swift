@@ -31,6 +31,7 @@
 -(nullable CGImageRef)get:(int)frame;
 -(nullable Image*)getImage:(int)frame;
 -(int)framesCount;
+-(int)loopsCount;
 -(int)frameDuration:(int)frame;
 -(CGSize)imageSize;
 -(int)duration;

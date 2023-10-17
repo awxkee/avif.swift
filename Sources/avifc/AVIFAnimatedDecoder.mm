@@ -84,6 +84,10 @@
     return _idec->imageCount;
 }
 
+-(int)loopsCount {
+    return _idec->repetitionCount;
+}
+
 -(int)duration {
     return (int)(1000.0f / ((float)_idec->timescale) * (float)_idec->durationInTimescales);
 }

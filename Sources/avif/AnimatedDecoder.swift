@@ -28,37 +28,41 @@ import avifc
 
 public class AnimatedDecoder {
     
-    private let _decoder: AVIFAnimatedDecoder
+    private let mAVIFAnimatedDecoder: AVIFAnimatedDecoder
     
     public init(data: Data) throws {
         guard let decoder = AVIFAnimatedDecoder(data: data) else {
             throw AVIFReadError()
         }
-        _decoder = decoder
+        mAVIFAnimatedDecoder = decoder
     }
     
     public var numberOfFrames: Int {
-        return Int(_decoder.framesCount())
+        return Int(mAVIFAnimatedDecoder.framesCount())
     }
-    
+
+    public var loopsCount: Int {
+        Int(mAVIFAnimatedDecoder.loopsCount())
+    }
+
     public var duration: Int {
-        return Int(_decoder.duration())
+        return Int(mAVIFAnimatedDecoder.duration())
     }
     
     public func duration(of frame: Int) -> Int {
-        return Int(_decoder.frameDuration(Int32(frame)))
+        return Int(mAVIFAnimatedDecoder.frameDuration(Int32(frame)))
     }
-    
+
     public func getImage(frame: Int) throws -> PlatformImage {
-        guard let image = _decoder.getImage(Int32(frame)) else {
-            throw AVIFDecodingError()
+        guard let image = mAVIFAnimatedDecoder.getImage(Int32(frame)) else {
+            throw AVIFFrameDecodingError(frame: frame)
         }
         return image
     }
     
     public func get(frame: Int) throws -> CGImage {
-        guard let image = _decoder.get(Int32(frame)) else {
-            throw AVIFDecodingError()
+        guard let image = mAVIFAnimatedDecoder.get(Int32(frame)) else {
+            throw AVIFFrameDecodingError(frame: frame)
         }
         return image.takeRetainedValue()
     }

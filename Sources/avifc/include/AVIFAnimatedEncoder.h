@@ -34,6 +34,7 @@
 - (NSData* _Nullable)encode:(NSError * _Nullable *_Nullable)error;
 - (void)setSpeed:(NSInteger)speed;
 - (void)setCompressionQuality:(double)quality;
+- (void)setLoopsCount:(NSInteger)loopsCount;
 - (void)cleanUp;
 @end
 
