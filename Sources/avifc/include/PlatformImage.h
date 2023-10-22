@@ -36,6 +36,11 @@
 #define Image   UIImage
 #endif
 
+typedef NS_ENUM(NSUInteger, PreferredCodec) {
+    kAOM NS_SWIFT_NAME(AOM),
+    kSVTAV1 NS_SWIFT_NAME(SVTAV1)
+};
+
 static void AV1CGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
     if (data) free((void*)data);
 }

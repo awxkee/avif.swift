@@ -53,7 +53,9 @@ static void releaseSharedPixels(unsigned char * pixels) {
 
 - (nullable NSData *)encodeImage:(nonnull Image *)platformImage
                            speed:(NSInteger)speed
-                         quality:(double)quality error:(NSError * _Nullable *_Nullable)error {
+                         quality:(double)quality 
+                  preferredCodec:(PreferredCodec)preferredCodec
+                           error:(NSError * _Nullable *_Nullable)error {
     unsigned char * rgbPixels = [platformImage rgbaPixels];
     if (!rgbPixels) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
@@ -79,25 +81,40 @@ static void releaseSharedPixels(unsigned char * pixels) {
     }
     std::shared_ptr<avifImage> image(img, releaseSharedEncoderImage);
 
+    avifCodecChoice choice = AVIF_CODEC_CHOICE_AUTO;
+
+    switch (preferredCodec) {
+        case kAOM:
+            {
+                choice = avifCodecChoiceFromName("aom");
+            }
+            break;
+        case kSVTAV1:
+            {
+                choice = avifCodecChoiceFromName("svt");
+            }
+            break;
+    }
+
     avifRGBImageSetDefaults(&rgb, image.get());
     avifRGBImageAllocatePixels(&rgb);
     rgb.alphaPremultiplied = true;
     memcpy(rgb.pixels, rgba.get(), rgb.rowBytes * image->height);
-
-    if (!image->icc.size && (image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED) &&
-        (image->transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED)) {
-        // The final image has no ICC profile, the user didn't specify any CICP, and the source
-        // image didn't provide any CICP. Explicitly signal SRGB CP/TC here, as 2/2/x will be
-        // interpreted as SRGB anyway.
-        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
-        image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
-        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
-    }
-
-//    image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT2020;
-//    image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_HLG;
-//    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
-
+    
+    //    if (!image->icc.size && (image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED) &&
+    //        (image->transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED)) {
+    //        // The final image has no ICC profile, the user didn't specify any CICP, and the source
+    //        // image didn't provide any CICP. Explicitly signal SRGB CP/TC here, as 2/2/x will be
+    //        // interpreted as SRGB anyway.
+    //        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
+    //        image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+    //        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
+    //    }
+    
+    //    image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT2020;
+    //    image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_HLG;
+    //    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
+    
     rgba.reset();
     avifResult convertResult = avifImageRGBToYUV(image.get(), &rgb);
     if (convertResult != AVIF_RESULT_OK) {
@@ -105,15 +122,15 @@ static void releaseSharedPixels(unsigned char * pixels) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"convert to YUV failed with result: %s", avifResultToString(convertResult)] }];
         return nil;
     }
-
+    
     std::time_t currentTime = std::time(nullptr);
     std::tm* timeInfo = std::localtime(&currentTime);
-
+    
     // Format the date and time
     char formattedTime[20]; // Buffer for the formatted time
     std::strftime(formattedTime, sizeof(formattedTime), "%Y:%m:%d %H:%M:%S", timeInfo);
     std::string dateTime(formattedTime);
-
+    
     std::string xmpMetadata = "<?xpacket begin='﻿' id='W5M0MpCehiHzreSzNTczkc9d'?>"
     "<x:xmpmeta xmlns:x='adobe:ns:meta/' x:xmptk='XMP Core 5.5.0'>"
     "<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>"
@@ -136,14 +153,14 @@ static void releaseSharedPixels(unsigned char * pixels) {
     "</rdf:RDF>"
     "</x:xmpmeta>"
     "<?xpacket end='w'?>";
-
+    
     auto exifResult = avifImageSetMetadataXMP(image.get(), reinterpret_cast<const uint8_t*>(xmpMetadata.data()), xmpMetadata.size());
     if (exifResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgb);
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"Add EXIF failed with result: %s", avifResultToString(exifResult)] }];
         return nil;
     }
-
+    
     auto enc = avifEncoderCreate();
     if (!enc) {
         avifRGBImageFreePixels(&rgb);
@@ -155,6 +172,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
     std::shared_ptr<avifEncoder> encoder(enc, releaseSharedEncoder);
     encoder->maxThreads = 6;
     encoder->quality = quality*100;
+    encoder->codecChoice = choice;
     if (speed != -1) {
         encoder->speed = (int)MAX(MIN(speed, AVIF_SPEED_FASTEST), AVIF_SPEED_SLOWEST);
     }

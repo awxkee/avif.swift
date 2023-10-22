@@ -32,7 +32,7 @@ import AppKit
 #endif
 
 public class AVIFEncoder {
-    public static func encode(image: PlatformImage, quality: Double = 1.0, speed: Int = -1) throws -> Data {
+    public static func encode(image: PlatformImage, quality: Double = 1.0, speed: Int = -1, preferredCodec: PreferredCodec = .AOM) throws -> Data {
         var newImage = image
         if newImage.size.width.truncatingRemainder(dividingBy: 2) != 0
             || newImage.size.height.truncatingRemainder(dividingBy: 2) != 0 {
@@ -40,7 +40,7 @@ public class AVIFEncoder {
                                  height: CGFloat((Int(newImage.size.height) / 2) * 2))
             newImage = imageScaled(toScale: image, to: newSize)
         }
-        return try AVIFEncoding().encode(newImage, speed: speed, quality: quality)
+        return try AVIFEncoding().encode(newImage, speed: speed, quality: quality, preferredCodec: preferredCodec)
     }
     
     private static func imageScaled(toScale image: PlatformImage, to size: CGSize, scale: CGFloat? = nil) -> PlatformImage {

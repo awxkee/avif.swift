@@ -24,17 +24,14 @@
 //
 
 #import "AVIFImageMacros.h"
-
-#if AVIF_PLUGIN_MAC
-#import <AppKit/AppKit.h>
-#define Image   NSImage
-#else
-#import <UIKit/UIKit.h>
-#define Image   UIImage
-#endif
+#import "PlatformImage.h"
 
 @interface AVIFEncoding : NSObject
 
-- (nullable NSData *)encodeImage:(nonnull Image *)platformImage speed:(NSInteger)speed quality:(double)quality error:(NSError * _Nullable *_Nullable)error;
+- (nullable NSData *)encodeImage:(nonnull Image *)platformImage
+                           speed:(NSInteger)speed
+                         quality:(double)quality
+                         preferredCodec:(PreferredCodec)preferredCodec
+                           error:(NSError * _Nullable *_Nullable)error;
 
 @end

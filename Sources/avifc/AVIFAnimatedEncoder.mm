@@ -35,14 +35,29 @@
     [self cleanUp];
 }
 
-- (void*)create:(NSError * _Nullable * _Nullable)error {
+- (void*)create:(PreferredCodec)preferredCodec error:(NSError * _Nullable * _Nullable)error {
     encoder = avifEncoderCreate();
     if (!encoder) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder allocation has failed" }];
         return nil;
     }
+    avifCodecChoice choice = AVIF_CODEC_CHOICE_AUTO;
     encoder->maxThreads = 6;
     encoder->timescale = 1000;
+    switch (preferredCodec) {
+        case kAOM:
+            {
+                choice = avifCodecChoiceFromName("aom");
+            }
+            break;
+        case kSVTAV1:
+            {
+                choice = avifCodecChoiceFromName("svt");
+            }
+            break;
+    }
+    encoder->codecChoice = choice;
+
     return (__bridge void * _Nullable)(self);
 }
 

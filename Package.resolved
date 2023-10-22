@@ -19,6 +19,15 @@
       }
     },
     {
+      "identity" : "libsvtav1enc.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/awxkee/libsvtav1enc.swift",
+      "state" : {
+        "revision" : "fff1840be980fb2a9b7b3a0245499db95ff753df",
+        "version" : "1.0.3"
+      }
+    },
+    {
       "identity" : "libwebp-ios",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libwebp-ios.git",
