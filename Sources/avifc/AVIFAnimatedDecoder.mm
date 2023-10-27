@@ -48,6 +48,7 @@
     avifResult decodeResult = avifDecoderParse(_idec);
     if (decodeResult != AVIF_RESULT_OK) {
         avifDecoderDestroy(_idec);
+        _idec = nullptr;
         return nil;
     }
     return self;

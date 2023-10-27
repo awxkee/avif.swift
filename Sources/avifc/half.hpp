@@ -24,6 +24,12 @@
 #ifndef HALF_HALF_HPP
 #define HALF_HALF_HPP
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+#pragma clang diagnostic ignored "-Wunused-value"
+#pragma clang diagnostic ignored "-Wunused-result"
+#pragma clang diagnostic pop
+
 #define HALF_GCC_VERSION (__GNUC__*100+__GNUC_MINOR__)
 
 #if defined(__INTEL_COMPILER)

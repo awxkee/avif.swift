@@ -47,16 +47,17 @@ public class AVIFEncoder {
         assert(size.width > 0 && size.height > 0, "You cannot safely scale an image to a zero width or height")
         
         #if os(macOS)
-        let destSize = NSMakeSize(CGFloat(size.width), CGFloat(size.height))
-        let newImage = NSImage(size: destSize)
-        newImage.lockFocus()
-        image.draw(in: NSMakeRect(0, 0, destSize.width, destSize.height),
-                   from: NSMakeRect(0, 0, image.size.width, image.size.height),
-                   operation: NSCompositingOperation.copy,
-                   fraction: CGFloat(1))
-        newImage.unlockFocus()
-        newImage.size = destSize
-        return NSImage(data: newImage.tiffRepresentation!)!
+        let newWidth = size.width * (scale ?? 1)
+        let newHeight = size.height * (scale ?? 1)
+
+        // Create a new NSSize object with the newly calculated size
+        let newSize = NSSize(width: newWidth.rounded(.down), height: newHeight.rounded(.down))
+
+        // Cast the NSImage to a CGImage
+        var imageRect = CGRect(origin: .zero, size: size)
+        guard let imageRef = image.cgImage(forProposedRect: &imageRect, context: nil, hints: nil) else { return image }
+
+        return NSImage(cgImage: imageRef, size: newSize)
         #else
         UIGraphicsBeginImageContextWithOptions(size, false, scale ?? image.scale)
         image.draw(in: CGRect(origin: .zero, size: size))
