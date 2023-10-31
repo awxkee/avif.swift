@@ -26,31 +26,56 @@
 #import <Foundation/Foundation.h>
 #import "PlatformImage.h"
 #import "AVIFRGBAMultiplier.h"
+#import <Accelerate/Accelerate.h>
 
 @implementation Image (ColorData)
+
+-(bool)avifUnpremultiplyRGBA:(nonnull unsigned char*)data width:(NSInteger)width height:(NSInteger)height {
+    vImage_Buffer src = {
+        .data = (void*)data,
+        .width = static_cast<vImagePixelCount>(width),
+        .height = static_cast<vImagePixelCount>(height),
+        .rowBytes = static_cast<vImagePixelCount>(width * 4)
+    };
+
+    vImage_Buffer dest = {
+        .data = data,
+        .width = static_cast<vImagePixelCount>(width),
+        .height = static_cast<vImagePixelCount>(height),
+        .rowBytes = static_cast<vImagePixelCount>(width * 4)
+    };
+    vImage_Error vEerror = vImageUnpremultiplyData_RGBA8888(&src, &dest, kvImageNoFlags);
+    if (vEerror != kvImageNoError) {
+        return false;
+    }
+    return true;
+}
+
 #if TARGET_OS_OSX
 
 -(nullable CGImageRef)makeCGImage {
-    NSRect rect = NSMakeRect(0, 0, self.size.width, self.size.height);
-    CGImageRef imageRef = [self CGImageForProposedRect: &rect context:nil hints:nil];
+    CGImageRef imageRef = [self CGImageForProposedRect:nil context:nil hints:nil];
     return imageRef;
 }
 
--(nonnull uint8_t *) rgbaPixels {
+-(nonnull uint8_t *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
     CGImageRef imageRef = [self makeCGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
+    width = width % 2 == 0 ? width : width + 1;
+    height = height % 2 == 0 ? height : height + 1;
+    *imageWidth = static_cast<int>(width);
+    *imageHeight = static_cast<int>(height);
     int stride = (int)4 * (int)width * sizeof(uint8_t);
     uint8_t *targetMemory = reinterpret_cast<uint8_t*>(malloc((int)(stride * height)));
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    CGBitmapInfo bitmapInfo = (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrder32Big;
+    CGBitmapInfo bitmapInfo = (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrderDefault;
 
     CGContextRef targetContext = CGBitmapContextCreate(targetMemory, width, height, 8, stride, colorSpace, bitmapInfo);
 
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext: [NSGraphicsContext graphicsContextWithCGContext:targetContext flipped:FALSE]];
-    CGColorSpaceRelease(colorSpace);
 
     [self drawInRect: NSMakeRect(0, 0, width, height)
             fromRect: NSZeroRect
@@ -60,14 +85,24 @@
     [NSGraphicsContext restoreGraphicsState];
 
     CGContextRelease(targetContext);
+    CGColorSpaceRelease(colorSpace);
+
+    if (![self avifUnpremultiplyRGBA:targetMemory width:width height:height]) {
+        free(targetMemory);
+        return nil;
+    }
 
     return targetMemory;
 }
 #else
-- (unsigned char *)rgbaPixels {
+- (unsigned char *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
     CGImageRef imageRef = [self CGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
+    width = width % 2 == 0 ? width : width + 1;
+    height = height % 2 == 0 ? height : height + 1;
+    *imageWidth = static_cast<int>(width);
+    *imageHeight = static_cast<int>(height);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
     unsigned char *rawData = (unsigned char*) malloc(height * width * 4 * sizeof(uint8_t));
     NSUInteger bytesPerPixel = 4;
@@ -75,11 +110,15 @@
     NSUInteger bitsPerComponent = 8;
     CGContextRef context = CGBitmapContextCreate(rawData, width, height,
                                                  bitsPerComponent, bytesPerRow, colorSpace,
-                                                 (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrder32Big);
-    CGColorSpaceRelease(colorSpace);
-
+                                                 (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrderDefault);
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
     CGContextRelease(context);
+    CGColorSpaceRelease(colorSpace);
+
+    if (![self avifUnpremultiplyRGBA:rawData width:width height:height]) {
+        free(rawData);
+        return nil;
+    }
 
     return rawData;
 }

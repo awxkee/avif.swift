@@ -46,7 +46,7 @@ static void AV1CGDataProviderReleaseDataCallback(void *info, const void *data, s
 }
 
 @interface Image (ColorData)
-- (unsigned char *)rgbaPixels;
+- (unsigned char *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight;
 @end
 
 

@@ -56,7 +56,9 @@ static void releaseSharedPixels(unsigned char * pixels) {
                          quality:(double)quality 
                   preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error {
-    unsigned char * rgbPixels = [platformImage rgbaPixels];
+    int width;
+    int height;
+    unsigned char * rgbPixels = [platformImage rgbaPixels:&width imageHeight:&height];
     if (!rgbPixels) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
                                             code:500
@@ -64,13 +66,6 @@ static void releaseSharedPixels(unsigned char * pixels) {
         return nil;
     }
     std::shared_ptr<unsigned char> rgba(rgbPixels, releaseSharedPixels);
-#if TARGET_OS_OSX
-    int width = [platformImage size].width;
-    int height = [platformImage size].height;
-#else
-    int width = [platformImage size].width * [platformImage scale];
-    int height = [platformImage size].height * [platformImage scale];
-#endif
     avifRGBImage rgb;
     auto img = avifImageCreate(width, height, (uint32_t)8, AVIF_PIXEL_FORMAT_YUV420);
     if (!img) {
@@ -98,7 +93,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
 
     avifRGBImageSetDefaults(&rgb, image.get());
     avifRGBImageAllocatePixels(&rgb);
-    rgb.alphaPremultiplied = true;
+    rgb.alphaPremultiplied = false;
     memcpy(rgb.pixels, rgba.get(), rgb.rowBytes * image->height);
     
     //    if (!image->icc.size && (image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED) &&

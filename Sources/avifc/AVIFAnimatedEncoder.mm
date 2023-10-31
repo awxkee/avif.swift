@@ -66,14 +66,15 @@
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder is not allocation" }];
         return nil;
     }
-    unsigned char * rgba = [platformImage rgbaPixels];
-#if TARGET_OS_OSX
-    int width = [platformImage size].width;
-    int height = [platformImage size].height;
-#else
-    int width = [platformImage size].width * [platformImage scale];
-    int height = [platformImage size].height * [platformImage scale];
-#endif
+    int width;
+    int height;
+    unsigned char * rgba = [platformImage rgbaPixels:&width imageHeight:&height];
+    if (!rgba) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: @"Fetching image pixels has failed" }];
+        return nil;
+    }
     avifRGBImage rgb;
     avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
     if (!image) {
@@ -84,7 +85,7 @@
     avifRGBImageSetDefaults(&rgb, image);
     avifRGBImageAllocatePixels(&rgb);
     rgb.depth = 8;
-    rgb.alphaPremultiplied = true;
+    rgb.alphaPremultiplied = false;
     memcpy(rgb.pixels, rgba, rgb.rowBytes * image->height);
     
     free(rgba);

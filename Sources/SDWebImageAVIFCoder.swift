@@ -39,44 +39,22 @@ import AppKit.NSImage
 public typealias AVIFSDImage = NSImage
 #endif
 
-public class SDWebImageAVIFCoder: NSObject, SDImageCoder {
-    public func canDecode(from data: Data?) -> Bool {
-        guard let data else { return false }
-        return data.isAVIFFormat
-    }
-
-    public func decodedImage(with data: Data?, options: [SDImageCoderOption : Any]? = nil) -> AVIFSDImage? {
-        guard let data else {
-            return nil
-        }
-        return AVIFDecoder.decode(data)
-    }
-
-    public func canEncode(to format: SDImageFormat) -> Bool {
-        return true
-    }
-
-    public func encodedData(with image: AVIFSDImage?, format: SDImageFormat, options: [SDImageCoderOption : Any]? = nil) -> Data? {
-        guard let image else {
-            return nil
-        }
-        return try? AVIFEncoder.encode(image: image, quality: 50)
-    }
-
-    public override init() {
-    }
-}
-
-public class SDWebImageAVIFAnimatedCoder: NSObject, SDAnimatedImageCoder {
-
-    private let decoder: AnimatedDecoder
+public class SDWebImageAVIFCoder: NSObject, SDAnimatedImageCoder {
+    private let decoder: AnimatedDecoder?
+    private let mAnimatedData: Data?
 
     public required init?(animatedImageData data: Data?, options: [SDImageCoderOption : Any]? = nil) {
         guard let data, let mDecoder = try? AnimatedDecoder(data: data) else {
             return nil
         }
         decoder = mDecoder
+        self.mAnimatedData = data
         super.init()
+    }
+
+    public override init() {
+        self.decoder = nil
+        self.mAnimatedData = nil
     }
 
     public func canDecode(from data: Data?) -> Bool {
@@ -109,19 +87,23 @@ public class SDWebImageAVIFAnimatedCoder: NSObject, SDAnimatedImageCoder {
     }
 
     public var animatedImageFrameCount: UInt {
-        UInt(decoder.numberOfFrames)
+        guard let decoder else { return 0 }
+        return UInt(decoder.numberOfFrames)
     }
 
     public var animatedImageLoopCount: UInt {
-        UInt.max
+        guard let decoder else { return 0 }
+        return UInt(decoder.loopsCount)
     }
 
     public func animatedImageFrame(at index: UInt) -> AVIFSDImage? {
+        guard let decoder else { return nil }
         return try? decoder.getImage(frame: Int(index))
     }
 
     public func animatedImageDuration(at index: UInt) -> TimeInterval {
-        TimeInterval(decoder.duration(of: Int(index)))
+        guard let decoder else { return 0 }
+        return TimeInterval(decoder.duration(of: Int(index))) / 1000
     }
 
 }
