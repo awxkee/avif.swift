@@ -58,7 +58,7 @@
     return imageRef;
 }
 
--(nonnull uint8_t *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
+-(nullable uint8_t *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
     CGImageRef imageRef = [self makeCGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);

@@ -196,7 +196,7 @@ public:
         return ColorSpaceMatrix(resultMatrix);
     }
 
-    inline void convert(float& r, float& g, float& b) {
+    inline void convert(float& r, float& g, float& b) const {
 #if __arm64
         float32x4_t v = { r, g, b, 0.0f };
         r = vdot_f32(v, row1);

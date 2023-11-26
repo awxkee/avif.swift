@@ -29,19 +29,21 @@
 
 @implementation RgbTransfer
 
-+(bool)CopyBuffer:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height pixelSize:(int)pixelSize components:(int)components {
++(bool)CopyBuffer:(nonnull uint8_t*)src srcStride:(int)srcStride
+              dst:(nonnull uint8_t*)dst dstStride:(int)dstStride
+            width:(int)width height:(int)height pixelSize:(int)pixelSize components:(int)components {
     vImage_Buffer srcBuffer = {
         .data = (void*)src,
         .width = static_cast<vImagePixelCount>(width * components),
         .height = static_cast<vImagePixelCount>(height),
-        .rowBytes = static_cast<size_t>(stride)
+        .rowBytes = static_cast<size_t>(srcStride)
     };
 
     vImage_Buffer dstBuffer = {
         .data = dst,
         .width = static_cast<vImagePixelCount>(width * components),
         .height = static_cast<vImagePixelCount>(height),
-        .rowBytes = static_cast<size_t>(stride)
+        .rowBytes = static_cast<size_t>(dstStride)
     };
     vImage_Error vEerror = vImageCopyBuffer(&srcBuffer, &dstBuffer, static_cast<size_t>(pixelSize), kvImageNoFlags);
     if (vEerror != kvImageNoError) {

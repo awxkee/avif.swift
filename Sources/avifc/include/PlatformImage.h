@@ -41,12 +41,12 @@ typedef NS_ENUM(NSUInteger, PreferredCodec) {
     kSVTAV1 NS_SWIFT_NAME(SVTAV1)
 };
 
-static void AV1CGDataProviderReleaseDataCallback(void *info, const void *data, size_t size) {
+static void AV1CGDataProviderReleaseDataCallback(void * _Nullable info, const void * _Nullable data, size_t size) {
     if (data) free((void*)data);
 }
 
 @interface Image (ColorData)
-- (unsigned char *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight;
+- (unsigned char *_Nullable)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight;
 @end
 
 

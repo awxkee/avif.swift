@@ -32,7 +32,138 @@
 #import "TargetConditionals.h"
 #import "Rgb1010102Converter.h"
 #import "RgbTransfer.h"
+#import <avif/internal.h>
 #import "Color/Colorspace.h"
+
+class XFormDataContainer {
+public:
+    XFormDataContainer(vector<uint8_t>& src): container(src) {
+        
+    }
+    
+    void clear() {
+        container.clear();
+    }
+    
+    uint8_t* data() {
+        return container.data();
+    }
+private:
+    vector<uint8_t> container;
+};
+
+static void XFormDataRelease(void * _Nullable info, const void * _Nullable data, size_t size) {
+    XFormDataContainer* mDataContainer = reinterpret_cast<XFormDataContainer*>(info);
+    if (mDataContainer) {
+        mDataContainer->clear();
+        delete mDataContainer;
+    }
+}
+
+static void PrepareReformatState(const avifImage * image, avifReformatState * state) {
+    avifGetPixelFormatInfo(image->yuvFormat, &state->formatInfo);
+    avifCalcYUVCoefficients(image, &state->kr, &state->kg, &state->kb);
+    state->mode = AVIF_REFORMAT_MODE_YUV_COEFFICIENTS;
+    
+    if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) {
+        state->mode = AVIF_REFORMAT_MODE_IDENTITY;
+    } else if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO) {
+        state->mode = AVIF_REFORMAT_MODE_YCGCO;
+    }
+    
+    if (state->mode != AVIF_REFORMAT_MODE_YUV_COEFFICIENTS) {
+        state->kr = 0.0f;
+        state->kg = 0.0f;
+        state->kb = 0.0f;
+    }
+}
+
+static void SetupConversionInfo(const avifImage * avif,
+                                avifReformatState* state,
+                                vImage_YpCbCrToARGBMatrix* matrix,
+                                vImage_YpCbCrPixelRange* pixelRange) {
+    PrepareReformatState(avif, state);
+    
+    // Setup Matrix
+    matrix->Yp = 1.0f;
+    
+    matrix->Cb_B =  2.0f * (1.0f - state->kb);
+    matrix->Cb_G = -2.0f * (1.0f - state->kb) * state->kb / state->kg;
+    
+    matrix->Cr_R =  2.0f * (1.0f - state->kr);
+    matrix->Cr_G = -2.0f * (1.0f - state->kr) * state->kr / state->kg;
+    
+    // Setup Pixel Range
+    switch (avif->depth) {
+        case 8:
+            if (avif->yuvRange == AVIF_RANGE_LIMITED) {
+                pixelRange->Yp_bias = 16;
+                pixelRange->YpRangeMax = 235;
+                pixelRange->YpMax = 255;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 128;
+                pixelRange->CbCrRangeMax = 240;
+                pixelRange->CbCrMax = 255;
+                pixelRange->CbCrMin = 0;
+            }else{
+                pixelRange->Yp_bias = 0;
+                pixelRange->YpRangeMax = 255;
+                pixelRange->YpMax = 255;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 128;
+                pixelRange->CbCrRangeMax = 255;
+                pixelRange->CbCrMax = 255;
+                pixelRange->CbCrMin = 0;
+            }
+            break;
+        case 10:
+            if (avif->yuvRange == AVIF_RANGE_LIMITED) {
+                pixelRange->Yp_bias = 64;
+                pixelRange->YpRangeMax = 940;
+                pixelRange->YpMax = 1023;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 512;
+                pixelRange->CbCrRangeMax = 960;
+                pixelRange->CbCrMax = 1023;
+                pixelRange->CbCrMin = 0;
+            }else{
+                pixelRange->Yp_bias = 0;
+                pixelRange->YpRangeMax = 1023;
+                pixelRange->YpMax = 1023;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 512;
+                pixelRange->CbCrRangeMax = 1023;
+                pixelRange->CbCrMax = 1023;
+                pixelRange->CbCrMin = 0;
+            }
+            break;
+        case 12:
+            if (avif->yuvRange == AVIF_RANGE_LIMITED) {
+                pixelRange->Yp_bias = 256;
+                pixelRange->YpRangeMax = 3760;
+                pixelRange->YpMax = 4095;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 2048;
+                pixelRange->CbCrRangeMax = 3840;
+                pixelRange->CbCrMax = 4095;
+                pixelRange->CbCrMin = 0;
+            }else{
+                pixelRange->Yp_bias = 0;
+                pixelRange->YpRangeMax = 4095;
+                pixelRange->YpMax = 4095;
+                pixelRange->YpMin = 0;
+                pixelRange->CbCr_bias = 2048;
+                pixelRange->CbCrRangeMax = 4095;
+                pixelRange->CbCrMax = 4095;
+                pixelRange->CbCrMin = 0;
+            }
+            break;
+        default:
+            NSLog(@"Unknown bit depth: %d", avif->depth);
+            return;
+    }
+    
+}
 
 @implementation AVIFImageXForm
 
@@ -64,7 +195,7 @@
     avifRGBImageSetDefaults(&rgbImage, decoder->image);
     
     auto imageUsesAlpha = decoder->image->imageOwnsAlphaPlane || decoder->image->alphaPlane != nullptr;
-
+    
     int components = imageUsesAlpha ? 4 : 3;
     
     auto colorPrimaries = decoder->image->colorPrimaries;
@@ -81,8 +212,8 @@
         rgbImage.depth = 8;
         rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
     }
-    avifRGBImageAllocatePixels(&rgbImage);
     
+    avifRGBImageAllocatePixels(&rgbImage);
     avifResult rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgbImage);
@@ -93,13 +224,19 @@
     int newHeight = rgbImage.height;
     int newRowBytes = rgbImage.rowBytes;
     int depth = decoder->image->depth == 10 ? 10 : (decoder->image->depth > 8 ? 16 : 8);
-    int stride = rgbImage.rowBytes;
-    auto pixelsData = reinterpret_cast<unsigned char*>(malloc(stride * newHeight));
+    int srcStride = rgbImage.rowBytes;
     
-    if (![RgbTransfer CopyBuffer:rgbImage.pixels dst:pixelsData stride:stride width:newWidth height:newHeight
+    int newLineWidth = newWidth * static_cast<int>(isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t)) * components;
+    int alignment = 64;
+    int padding = (alignment - (newLineWidth % alignment)) % alignment;
+    int stride = newLineWidth + padding;
+    
+    vector<uint8_t> mPixelsVector(stride * newHeight);
+    
+    if (![RgbTransfer CopyBuffer:rgbImage.pixels srcStride:srcStride dst:mPixelsVector.data()
+                       dstStride:stride width:newWidth height:newHeight
                        pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t) components:components]) {
         avifRGBImageFreePixels(&rgbImage);
-        free(pixelsData);
         return nil;
     }
     
@@ -153,9 +290,9 @@
             }
             colorSpace = bt2020;
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                 (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
-                  || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
-                  || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
+                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
+                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
             float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
             ColorGammaCorrection gamma = Rec2020;
             TransferFunction function;
@@ -173,7 +310,7 @@
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
                 gamma = Rec2020;
             }
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
@@ -218,7 +355,7 @@
                 colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
                 gamma = DisplayP3;
             }
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
@@ -239,14 +376,14 @@
                 function = SMPTE428;
             }
             colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
                                 stride:stride width:newWidth height:newHeight
                                    U16:depth > 8 depth:depth half:depth > 8
                              primaries:lumaPrimaries components:components
                        gammaCorrection:gamma function:function matrix:nullptr
                                profile:rec709Profile];
         } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                 transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
+                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
             CGColorSpaceRef p3linear = NULL;
             if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
                 p3linear = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearDisplayP3);
@@ -269,7 +406,7 @@
                 function = SMPTE428;
             }
             colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
-
+            
             float primaries[8];
             avifColorPrimariesGetValues(colorPrimaries, &primaries[0]);
             
@@ -279,16 +416,16 @@
                 {primaries[4], primaries[5]},
             };
             const float whitePoint[2] = {primaries[6], primaries[7]};
-
+            
             ColorSpaceMatrix originalMatrix = ColorSpaceMatrix(primariesXy, whitePoint);
             ColorSpaceMatrix transformation = displayP3Profile->toMatrix().inverted() * originalMatrix;
-
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(pixelsData)
-                              stride:stride width:newWidth height:newHeight
-                              U16:depth > 8 depth:depth half:depth > 8
-                              primaries:lumaPrimaries components:components
-                              gammaCorrection:gamma function:function
-                              matrix:&transformation profile:displayP3Profile];
+            
+            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
+                                stride:stride width:newWidth height:newHeight
+                                   U16:depth > 8 depth:depth half:depth > 8
+                             primaries:lumaPrimaries components:components
+                       gammaCorrection:gamma function:function
+                                matrix:&transformation profile:displayP3Profile];
         } else {
             colorSpace = CGColorSpaceCreateDeviceRGB();
         }
@@ -300,16 +437,21 @@
     int flags;
     bool use10Bits = false;
     if (depth == 10 && !useHDR) {
-        flags = (int)kCGImageByteOrder32Big | (int)kCGImagePixelFormatRGB101010 | (int)kCGImageAlphaLast;
-        uint8_t* rgb1010102Buffer = reinterpret_cast<uint8_t*>(malloc(newWidth * 4 * sizeof(uint8_t) * newHeight));
+        flags = (int)kCGImageByteOrderDefault | (int)kCGImagePixelFormatRGB101010 | (int)kCGImageAlphaLast;
+        int lineWidth = newWidth * static_cast<int>(sizeof(uint32_t));
+        int alignment = 64;
+        int padding = (alignment - (lineWidth % alignment)) % alignment;
+        int dstStride = lineWidth + padding;
+        vector<uint8_t> mVecRgb1010102(dstStride * newHeight);
         use10Bits = true;
-        if (![Rgb1010102Converter F16ToRGBA1010102:pixelsData dst:rgb1010102Buffer stride:&stride width:newWidth height:newHeight components:components]) {
-            free(pixelsData);
+        if (![Rgb1010102Converter F16ToRGBA1010102:mPixelsVector.data() stride:stride
+                                               dst:mVecRgb1010102.data() dstStride:dstStride
+                                             width:newWidth height:newHeight components:components]) {
             return NULL;
         }
         components = 4;
-        free(pixelsData);
-        pixelsData = rgb1010102Buffer;
+        stride = dstStride;
+        mPixelsVector = mVecRgb1010102;
     } else {
         if (isImageRequires64Bit) {
             flags = (int)kCGImageByteOrder16Little | (int)kCGBitmapFloatComponents;
@@ -328,9 +470,12 @@
             }
         }
     }
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, pixelsData, stride*newHeight, AV1CGDataProviderReleaseDataCallback);
+    XFormDataContainer* container = new XFormDataContainer(mPixelsVector);
+    CGDataProviderRef provider = CGDataProviderCreateWithData(container,
+                                                              container->data(),
+                                                              stride*newHeight,
+                                                              XFormDataRelease);
     if (!provider) {
-        free(pixelsData);
         return NULL;
     }
     

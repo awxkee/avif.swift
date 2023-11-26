@@ -50,10 +50,11 @@ inline half loadHalf1010102(uint16_t t) {
 
 @implementation Rgb1010102Converter: NSObject
 
-+(bool)F16ToRGBA1010102Impl:(nonnull uint8_t*)src dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height components:(int)components {
++(bool)F16ToRGBA1010102Impl:(nonnull const uint8_t*)src stride:(const int)stride
+                        dst:(nonnull uint8_t*)dst dstStride:(const int)dstStride
+                      width:(const int)width height:(const int)height components:(const int)components {
     uint8_t* dstTrail = reinterpret_cast<uint8_t*>(dst);
-    uint8_t* mSrc = reinterpret_cast<uint8_t*>(src);
-    int newStride = width * sizeof(uint8_t) * 4;
+    const uint8_t* mSrc = reinterpret_cast<const uint8_t*>(src);
     const float scale = 1.0f / float((1 << 10) - 1);
     const float maxColors = pow(2.0f, 10.0f) - 1;
     const float maxAlpha = 3;
@@ -66,7 +67,7 @@ inline half loadHalf1010102(uint16_t t) {
     const uint32x4_t alphaBitsMask = vdupq_n_u32(0b00000111);
 #endif
     for (int y = 0; y < height; ++y) {
-        uint16_t* row = reinterpret_cast<uint16_t*>(mSrc);
+        const uint16_t* row = reinterpret_cast<const uint16_t*>(mSrc);
         uint32_t* dst16 = reinterpret_cast<uint32_t*>(dstTrail);
         int x = 0;
 
@@ -76,9 +77,9 @@ inline half loadHalf1010102(uint16_t t) {
             for (; x + pixelCount < width; x+=pixelCount) {
                 float16x8x4_t rgb;
                 if (components == 4) {
-                    rgb = vld4q_f16(reinterpret_cast<float16_t*>(row));
+                    rgb = vld4q_f16(reinterpret_cast<const float16_t*>(row));
                 } else {
-                    float16x8x3_t rgbx3 = vld3q_f16(reinterpret_cast<float16_t*>(row));
+                    float16x8x3_t rgbx3 = vld3q_f16(reinterpret_cast<const float16_t*>(row));
                     const float16_t h = 1.0f;
                     rgb = { rgbx3.val[0], rgbx3.val[1], rgbx3.val[2], vdupq_n_f16(h) };
                 }
@@ -128,18 +129,17 @@ inline half loadHalf1010102(uint16_t t) {
             dst16 += 1;
         }
         mSrc += stride;
-        dstTrail += newStride;
+        dstTrail += dstStride;
     }
     return true;
 }
 
-+(bool)F16ToRGBA1010102:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(nonnull int*)stride width:(int)width height:(int)height components:(int)components {
-    if (![self F16ToRGBA1010102Impl:data dst:dst stride:*stride width:width height:height components:components]) {
++(bool)F16ToRGBA1010102:(nonnull const uint8_t*)data stride:(const int)stride
+                    dst:(nonnull uint8_t*)dst dstStride:(const int)dstStride
+                  width:(const int)width height:(const int)height components:(const int)components {
+    if (![self F16ToRGBA1010102Impl:data stride:stride dst:dst dstStride:dstStride width:width height:height components:components]) {
         return false;
     }
-
-    int rgb1010102Stride = width * sizeof(uint8_t) * 4;
-    *stride = rgb1010102Stride;
     return true;
 }
 

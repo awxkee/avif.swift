@@ -44,9 +44,13 @@ public final class AVIFNukePlugin: Nuke.ImageDecoding {
         return nil
     }
 
-    public struct AVIFNukePluginDecodeError: LocalizedError {
-        public var errorDescription: String? {
+    public struct AVIFNukePluginDecodeError: LocalizedError, CustomNSError {
+        public var errorDescription: String {
             "AVIF doesn't seems to be valid"
+        }
+
+        public var errorUserInfo: [String : Any] {
+            [NSLocalizedDescriptionKey: errorDescription]
         }
     }
 

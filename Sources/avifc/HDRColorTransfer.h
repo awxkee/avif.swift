@@ -37,11 +37,11 @@ enum TransferFunction {
 };
 
 @interface HDRColorTransfer : NSObject
-+(void)transfer:(nonnull uint8_t*)data stride:(int)stride width:(int)width
-         height:(int)height U16:(bool)U16 depth:(int)depth half:(bool)half
-      primaries:(nonnull float*)primaries components:(int)components
-gammaCorrection:(ColorGammaCorrection)gammaCorrection
-       function:(TransferFunction)function
++(void)transfer:(nonnull uint8_t*)data stride:(const int)stride width:(const int)width
+         height:(const int)height U16:(bool)U16 depth:(const int)depth half:(const bool)half
+      primaries:(nonnull float*)primaries components:(const int)components
+gammaCorrection:(const ColorGammaCorrection)gammaCorrection
+       function:(const TransferFunction)function
          matrix:(nullable ColorSpaceMatrix*)matrix
         profile:(nonnull ColorSpaceProfile*)profile;
 @end
