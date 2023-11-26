@@ -83,7 +83,7 @@ inline half loadHalf(uint16_t t) {
 
 void TransferROW_U16HFloats(uint16_t *data, const ColorGammaCorrection gammaCorrection,
                             const float* primaries,
-                            ToneMapper* toneMapper, const TransferFunction transfer, const ColorSpaceMatrix* matrix) {
+                            ToneMapper* toneMapper, const TransferFunction transfer, ColorSpaceMatrix* matrix) {
     float r = (float) loadHalf(data[0]);
     float g = (float) loadHalf(data[1]);
     float b = (float) loadHalf(data[2]);
@@ -222,7 +222,7 @@ void TransferROW_U8(uint8_t *data, float maxColors,
                     const ColorGammaCorrection gammaCorrection,
                     ToneMapper* toneMapper,
                     const TransferFunction transfer,
-                    const ColorSpaceMatrix* matrix) {
+                    ColorSpaceMatrix* matrix) {
     auto r = (float) data[0] / (float) maxColors;
     auto g = (float) data[1] / (float) maxColors;
     auto b = (float) data[2] / (float) maxColors;
