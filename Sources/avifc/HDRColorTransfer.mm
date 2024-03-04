@@ -42,7 +42,6 @@
 #endif
 
 #import "NEMath.h"
-#import "Math/FastMath.hpp"
 #import "Color/Colorspace.h"
 #import "ToneMap/Rec2408ToneMapper.hpp"
 #import "ToneMap/LogarithmicToneMapper.hpp"
@@ -56,6 +55,7 @@
 #import "Color/PQ.hpp"
 #import "Color/HLG.hpp"
 #import "Color/SMPTE428.hpp"
+#include "concurrency.hpp"
 #include <thread>
 
 using namespace std;
@@ -127,21 +127,18 @@ void TransferROW_U16HFloats(uint16_t *data, const ColorGammaCorrection gammaCorr
 
 #if __arm64__
 
-__attribute__((always_inline))
 __attribute__((flatten))
 inline void SetPixelsRGB(float16x4_t rgb, uint16_t *vector, int components) {
     uint16x4_t t = vreinterpret_u16_f16(rgb);
     vst1_u16(vector, t);
 }
 
-__attribute__((always_inline))
 __attribute__((flatten))
 inline void SetPixelsRGBU8(const float32x4_t rgb, uint8_t *vector, const float32x4_t maxColors) {
     const float32x4_t zeros = vdupq_n_f32(0);
     const float32x4_t v = vminq_f32(vmaxq_f32(vrndq_f32(vmulq_f32(rgb, maxColors)), zeros), maxColors);
 }
 
-__attribute__((always_inline))
 __attribute__((flatten))
 inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxColors) {
     const float32x4_t zeros = vdupq_n_f32(0);
@@ -149,7 +146,6 @@ inline float32x4_t GetPixelsRGBU8(const float32x4_t rgb, const float32x4_t maxCo
     return v;
 }
 
-__attribute__((always_inline))
 __attribute__((flatten))
 inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
                               float32x4_t bChan,
@@ -218,7 +214,7 @@ inline float32x4x4_t Transfer(float32x4_t rChan, float32x4_t gChan,
 
 #endif
 
-void TransferROW_U8(uint8_t *data, float maxColors,
+void TransferROWUnsigned8(uint8_t *data, float maxColors,
                     const ColorGammaCorrection gammaCorrection,
                     ToneMapper* toneMapper,
                     const TransferFunction transfer,
@@ -366,218 +362,200 @@ void TransferROW_U8(uint8_t *data, float maxColors,
                matrix:(ColorSpaceMatrix*)matrix {
     auto ptr = reinterpret_cast<uint8_t *>(data);
 
-    const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
-
-    const auto maxColors = powf(2, (float) depth) - 1;
-    const auto mColors = vdupq_n_f32(maxColors);
+    const auto maxColors = std::pow(2, (float) depth) - 1;
 
     const float colorScale = 1.0f / float((1 << depth) - 1);
 
-    const float32x4_t vMaxColors = vdupq_n_f32(maxColors);
+    const int threadCount = std::clamp(std::min(static_cast<int>(thread::hardware_concurrency()), height * width / (256*256)), 1, 12);
+     
+    concurrency::parallel_for(threadCount, height, [&](int y) {
+        const float32x4_t vMaxColors = vdupq_n_f32(maxColors);
+        const float32x4_t mask = {1.0f, 1.0f, 1.0f, 0.0};
+        const auto mColors = vdupq_n_f32(maxColors);
+        auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
+        int x = 0;
+        const int pixels = 16;
+        for (x = 0; x + pixels < width; x += pixels) {
+            if (components == 4) {
+                uint8x16x4_t rgbChannels = vld4q_u8(ptr16);
 
-    int threadCount = clamp(min(static_cast<int>(thread::hardware_concurrency()), height * width / (256*256)), 1, 12);
-    vector<thread> workers;
-    int segmentHeight = height / threadCount;
+                uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
+                uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
+                uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
+                uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
+                uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
+                uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
 
-    for (int i = 0; i < threadCount; i++) {
-        int start = i * segmentHeight;
-        int end = (i + 1) * segmentHeight;
-        if (i == threadCount - 1) {
-            end = height;
-        }
-        workers.emplace_back([start, end, ptr, stride, space, toneMapper, function, matrix, components, width,
-                              primaries, colorScale, vMaxColors, maxColors]() {
-            for (int y = start; y < end; ++y) {
-                auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
-                int x;
-                int pixels = 16;
-                for (x = 0; x + pixels < width; x += pixels) {
-                    if (components == 4) {
-                        uint8x16x4_t rgbChannels = vld4q_u8(ptr16);
+                uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
+                uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
+                uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
+                uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
+                uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
+                uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
 
-                        uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
-                        uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
-                        uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
-                        uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
-                        uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
-                        uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
+                float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
+                float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
+                float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                        uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
-                        uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
-                        uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
-                        uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
-                        uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
-                        uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
-                        float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
-                        float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                        float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                float32x4_t rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
+                uint8x8_t lRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw1))));
+                uint8x8_t lRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw2))));
+                uint8x8_t lRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw3))));
+                uint8x8_t lRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw4))));
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        float32x4_t rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        float32x4_t rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        float32x4_t rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        float32x4_t rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                        uint8x8_t lRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw1))));
-                        uint8x8_t lRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw2))));
-                        uint8x8_t lRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw3))));
-                        uint8x8_t lRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw4))));
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
+                uint8x8_t hRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw1))));
+                uint8x8_t hRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw2))));
+                uint8x8_t hRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw3))));
+                uint8x8_t hRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw4))));
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                uint8x8x4_t lResult = {lRow1u16, lRow2u16, lRow3u16, lRow4u16};
+                uint8x8x4_t hResult = {hRow1u16, hRow2u16, hRow3u16, hRow4u16};
+                lResult = vtranspose_u8(lResult);
+                hResult = vtranspose_u8(hResult);
+                uint8x16x4_t result = {
+                    vcombine_u8(lResult.val[0], hResult.val[0]),
+                    vcombine_u8(lResult.val[1], hResult.val[1]),
+                    vcombine_u8(lResult.val[2], hResult.val[2]),
+                    rgbChannels.val[3]
+                };
+                vst4q_u8(ptr16, result);
+            } else {
 
-                        uint8x8_t hRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw1))));
-                        uint8x8_t hRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw2))));
-                        uint8x8_t hRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw3))));
-                        uint8x8_t hRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw4))));
+                uint8x16x3_t rgbChannels = vld3q_u8(ptr16);
 
-                        uint8x8x4_t lResult = {lRow1u16, lRow2u16, lRow3u16, lRow4u16};
-                        uint8x8x4_t hResult = {hRow1u16, hRow2u16, hRow3u16, hRow4u16};
-                        lResult = vtranspose_u8(lResult);
-                        hResult = vtranspose_u8(hResult);
-                        uint8x16x4_t result = {
-                            vcombine_u8(lResult.val[0], hResult.val[0]),
-                            vcombine_u8(lResult.val[1], hResult.val[1]),
-                            vcombine_u8(lResult.val[2], hResult.val[2]),
-                            rgbChannels.val[3]
-                        };
-                        vst4q_u8(ptr16, result);
-                    } else {
+                uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
+                uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
+                uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
+                uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
+                uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
+                uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
 
-                        uint8x16x3_t rgbChannels = vld3q_u8(ptr16);
+                uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
+                uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
+                uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
+                uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
+                uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
+                uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
 
-                        uint8x8_t rChannelsLow = vget_low_u8(rgbChannels.val[0]);
-                        uint8x8_t rChannelsHigh = vget_high_f16(rgbChannels.val[0]);
-                        uint8x8_t gChannelsLow = vget_low_u8(rgbChannels.val[1]);
-                        uint8x8_t gChannelsHigh = vget_high_f16(rgbChannels.val[1]);
-                        uint8x8_t bChannelsLow = vget_low_u8(rgbChannels.val[2]);
-                        uint8x8_t bChannelsHigh = vget_high_f16(rgbChannels.val[2]);
+                float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
+                float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
+                float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
 
-                        uint16x8_t rLowU16 = vmovl_u8(rChannelsLow);
-                        uint16x8_t gLowU16 = vmovl_u8(gChannelsLow);
-                        uint16x8_t bLowU16 = vmovl_u8(bChannelsLow);
-                        uint16x8_t rHighU16 = vmovl_u8(rChannelsHigh);
-                        uint16x8_t gHighU16 = vmovl_u8(gChannelsHigh);
-                        uint16x8_t bHighU16 = vmovl_u8(bChannelsHigh);
+                float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        float32x4_t rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rLowU16))), colorScale);
-                        float32x4_t gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gLowU16))), colorScale);
-                        float32x4_t bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bLowU16))), colorScale);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
 
-                        float32x4x4_t low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        float32x4_t rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        float32x4_t rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        float32x4_t rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        float32x4_t rw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                float32x4_t rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                float32x4_t rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                float32x4_t rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                float32x4_t rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rLowU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gLowU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bLowU16))), colorScale);
+                uint8x8_t lRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw1))));
+                uint8x8_t lRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw2))));
+                uint8x8_t lRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw3))));
+                uint8x8_t lRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw4))));
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        float32x4_t rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        float32x4_t rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        float32x4_t rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        float32x4_t rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
 
-                        uint8x8_t lRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw1))));
-                        uint8x8_t lRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw2))));
-                        uint8x8_t lRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw3))));
-                        uint8x8_t lRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw4))));
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(rHighU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(gHighU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_low_u16(bHighU16))), colorScale);
+                rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
+                gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
+                bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        rw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        rw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        rw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
+                rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
+                rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
+                rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
+                rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
 
-                        rLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(rHighU16))), colorScale);
-                        gLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(gHighU16))), colorScale);
-                        bLow = vmulq_n_f32(vcvtq_f32_u32(vmovl_u16(vget_high_u16(bHighU16))), colorScale);
+                uint8x8_t hRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw1))));
+                uint8x8_t hRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw2))));
+                uint8x8_t hRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw3))));
+                uint8x8_t hRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
+                                                             vqmovn_u32(vcvtq_u32_f32(rcw4))));
 
-                        low = Transfer(rLow, gLow, bLow, space, toneMapper, function, matrix);
-                        rcw1 = GetPixelsRGBU8(low.val[0], vMaxColors);
-                        rcw2 = GetPixelsRGBU8(low.val[1], vMaxColors);
-                        rcw3 = GetPixelsRGBU8(low.val[2], vMaxColors);
-                        rcw4 = GetPixelsRGBU8(low.val[3], vMaxColors);
-
-                        uint8x8_t hRow1u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw1)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw1))));
-                        uint8x8_t hRow2u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw2)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw2))));
-                        uint8x8_t hRow3u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw3)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw3))));
-                        uint8x8_t hRow4u16 = vqmovn_u16(vcombine_u16(vqmovn_u32(vcvtq_u32_f32(rw4)),
-                                                                     vqmovn_u32(vcvtq_u32_f32(rcw4))));
-
-                        uint8x8x4_t lResult = {lRow1u16, lRow2u16, lRow3u16, lRow4u16};
-                        uint8x8x4_t hResult = {hRow1u16, hRow2u16, hRow3u16, hRow4u16};
-                        lResult = vtranspose_u8(lResult);
-                        hResult = vtranspose_u8(hResult);
-                        uint8x16x3_t result = {
-                            vcombine_u8(lResult.val[0], hResult.val[0]),
-                            vcombine_u8(lResult.val[1], hResult.val[1]),
-                            vcombine_u8(lResult.val[2], hResult.val[2])
-                        };
-                        vst3q_u8(ptr16, result);
-                    }
-
-                    ptr16 += components*pixels;
-                }
-
-                for (; x < width; ++x) {
-                    TransferROW_U8(ptr16, maxColors, space, toneMapper, function, matrix);
-                    ptr16 += components;
-                }
+                uint8x8x4_t lResult = {lRow1u16, lRow2u16, lRow3u16, lRow4u16};
+                uint8x8x4_t hResult = {hRow1u16, hRow2u16, hRow3u16, hRow4u16};
+                lResult = vtranspose_u8(lResult);
+                hResult = vtranspose_u8(hResult);
+                uint8x16x3_t result = {
+                    vcombine_u8(lResult.val[0], hResult.val[0]),
+                    vcombine_u8(lResult.val[1], hResult.val[1]),
+                    vcombine_u8(lResult.val[2], hResult.val[2])
+                };
+                vst3q_u8(ptr16, result);
             }
-        });
-    }
 
-    for (std::thread& thread : workers) {
-        thread.join();
-    }
+            ptr16 += components*pixels;
+        }
+
+        for (; x < width; ++x) {
+            TransferROWUnsigned8(ptr16, maxColors, space, toneMapper, function, matrix);
+            ptr16 += components;
+        }
+    });
 }
 #endif
 
@@ -604,44 +582,27 @@ void TransferROW_U8(uint8_t *data, float maxColors,
         return;
     }
 #endif
-    auto maxColors = pow(2, (float) depth) - 1;
+    auto maxColors = std::powf(2, (float) depth) - 1;
 
-    int threadCount = clamp(min(static_cast<int>(thread::hardware_concurrency()), height * width / (256*256)), 1, 12);
-    vector<thread> workers;
-    int segmentHeight = height / threadCount;
-
-    for (int i = 0; i < threadCount; i++) {
-        int start = i * segmentHeight;
-        int end = (i + 1) * segmentHeight;
-        if (i == threadCount - 1) {
-            end = height;
-        }
-        workers.emplace_back([start, end, U16, ptr, stride, primaries, maxColors, 
-                              matrix, toneMapper, function, components, width,
-                              gammaCorrection, half]() {
-            for (int y = start; y < end; ++y) {
-                if (U16) {
-                    auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
-                    for (int x = 0; x < width; ++x) {
-                        if (half) {
-                            TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper, function, matrix);
-                        }
-                        ptr16 += components;
-                    }
-                } else {
-                    auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
-                    for (int x = 0; x < width; ++x) {
-                        TransferROW_U8(ptr16, maxColors, gammaCorrection, toneMapper, function, matrix);
-                        ptr16 += components;
-                    }
+    const int threadCount = clamp(min(static_cast<int>(thread::hardware_concurrency()), height * width / (256*256)), 1, 12);
+    concurrency::parallel_for(threadCount, height, [&](int y) {
+        if (U16) {
+            auto ptr16 = reinterpret_cast<uint16_t *>(ptr + y * stride);
+            for (int x = 0; x < width; ++x) {
+                if (half) {
+                    TransferROW_U16HFloats(ptr16, gammaCorrection, primaries, toneMapper, function, matrix);
                 }
+                ptr16 += components;
             }
-        });
-    }
-
-    for (std::thread& thread : workers) {
-        thread.join();
-    }
+        } else {
+            auto ptr16 = reinterpret_cast<uint8_t *>(ptr + y * stride);
+            for (int x = 0; x < width; ++x) {
+                TransferROWUnsigned8(ptr16, maxColors, gammaCorrection, toneMapper, function, matrix);
+                ptr16 += components;
+            }
+        }
+    });
+    
     delete toneMapper;
 }
 @end

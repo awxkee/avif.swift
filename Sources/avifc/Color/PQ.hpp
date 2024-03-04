@@ -26,7 +26,6 @@
 #ifndef PQ_h
 #define PQ_h
 
-#import "Math/MathPowf.hpp"
 #import "NEMath.h"
 
 #if __arm64__
@@ -41,7 +40,7 @@ const static float c3 = (2392.0f / 4096.0f) * 32.0f;
 const static float m2Power = 1.0f / m2;
 const static float m1Power = 1.0f / m1;
 
-__attribute__((always_inline))
+__attribute__((flatten))
 static inline float32x4_t ToLinearPQ(const float32x4_t v, const float sdrReferencePoint) {
     const float32x4_t rv = vmaxq_f32(v, zeros);
     float32x4_t p = vpowq_f32(rv, m2Power);
@@ -51,18 +50,19 @@ static inline float32x4_t ToLinearPQ(const float32x4_t v, const float sdrReferen
 }
 #endif
 
+__attribute__((flatten))
 static float ToLinearPQ(float v, const float sdrReferencePoint) {
     float o = v;
     v = max(0.0f, v);
-    float m1 = (2610.0f / 4096.0f) / 4.0f;
-    float m2 = (2523.0f / 4096.0f) * 128.0f;
-    float c1 = 3424.0f / 4096.0f;
-    float c2 = (2413.0f / 4096.0f) * 32.0f;
-    float c3 = (2392.0f / 4096.0f) * 32.0f;
-    float p = powf_c(v, 1.0f / m2);
-    v = powf_c(max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
+    constexpr float m1 = (2610.0f / 4096.0f) / 4.0f;
+    constexpr float m2 = (2523.0f / 4096.0f) * 128.0f;
+    constexpr float c1 = 3424.0f / 4096.0f;
+    constexpr float c2 = (2413.0f / 4096.0f) * 32.0f;
+    constexpr float c3 = (2392.0f / 4096.0f) * 32.0f;
+    float p = std::powf(v, 1.0f / m2);
+    v = std::powf(std::max(p - c1, 0.0f) / (c2 - c3 * p), 1.0f / m1);
     v *= 10000.0f / sdrReferencePoint;
-    return copysign(v, o);
+    return std::copysign(v, o);
 }
 
 #endif /* PQ_h */

@@ -26,13 +26,13 @@
 #ifndef HLG_H
 #define HLG_H
 
-#include "Math/FastMath.hpp"
+#include <algorithm>
 
 #if __arm64__
 #include <arm_neon.h>
 #include "NEMath.h"
 
-__attribute__((always_inline))
+__attribute__((flatten))
 static inline float32x4_t HLGToLinear(const float32x4_t v) {
     const float32x4_t level = vdupq_n_f32(0.5f);
 
@@ -48,14 +48,17 @@ static inline float32x4_t HLGToLinear(const float32x4_t v) {
     float32x4_t high = vdivq_f32(vaddq_f32(vexpq_f32(vmulq_f32(vsubq_f32(v, vdupq_n_f32(c)), vDivVec)), vdupq_n_f32(b)), vdupq_n_f32(12.0f));
     float32x4_t low = vmulq_n_f32(vmulq_f32(v, v), 1.0f/3.0f);
 
-    low = vbslq_f32(mask, vdupq_n_f32(0), low);
-    high = vbslq_f32(maskHigh, vdupq_n_f32(0), high);
+    const float32x4_t zeros = vdupq_n_f32(0);
+
+    low = vbslq_f32(mask, zeros, low);
+    high = vbslq_f32(maskHigh, zeros, high);
 
     return vaddq_f32(low, high);
 }
 
 #endif
 
+__attribute__((flatten))
 static inline float HLGToLinear(float value)
 {
     if (value < 0.0f)
@@ -71,7 +74,7 @@ static inline float HLGToLinear(float value)
 
     if (value > 0.5f)
     {
-        value = (expf_c((value - c) / a) + b) / 12.0f;
+        value = (std::expf((value - c) / a) + b) / 12.0f;
     }
     else
     {

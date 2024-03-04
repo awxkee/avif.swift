@@ -1,13 +1,13 @@
 // Copyright 2020 Cloudinary. All rights reserved.
 // SPDX-License-Identifier: BSD-2-Clause
 
-#if defined(AVIF_CODEC_SVT)
 #include "avif/internal.h"
 
 #include "svt-av1/EbSvtAv1.h"
 
 #include "svt-av1/EbSvtAv1Enc.h"
 
+#include <stdint.h>
 #include <string.h>
 
 // The SVT_AV1_VERSION_MAJOR, SVT_AV1_VERSION_MINOR, SVT_AV1_VERSION_PATCHLEVEL, and
@@ -77,16 +77,17 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
 
     avifResult result = AVIF_RESULT_UNKNOWN_ERROR;
     EbColorFormat color_format = EB_YUV420;
+    uint8_t * uvPlanes = NULL; // 4:2:0 U and V placeholder for alpha because SVT-AV1 does not support 4:0:0.
     EbBufferHeaderType * input_buffer = NULL;
     EbErrorType res = EB_ErrorNone;
 
     int y_shift = 0;
-    // EbColorRange svt_range;
+    EbColorRange svt_range;
     if (alpha) {
-        // svt_range = EB_CR_FULL_RANGE;
+        svt_range = EB_CR_FULL_RANGE;
         y_shift = 1;
     } else {
-        // svt_range = (image->yuvRange == AVIF_RANGE_FULL) ? EB_CR_FULL_RANGE : EB_CR_STUDIO_RANGE;
+        svt_range = (image->yuvRange == AVIF_RANGE_FULL) ? EB_CR_FULL_RANGE : EB_CR_STUDIO_RANGE;
         switch (image->yuvFormat) {
             case AVIF_PIXEL_FORMAT_YUV444:
                 color_format = EB_YUV444;
@@ -99,6 +100,7 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
                 y_shift = 1;
                 break;
             case AVIF_PIXEL_FORMAT_YUV400:
+                // Setting color_format = EB_YUV400; results in "Svt[error]: Instance 1: Only support 420 now".
             case AVIF_PIXEL_FORMAT_NONE:
             case AVIF_PIXEL_FORMAT_COUNT:
             default:
@@ -118,11 +120,12 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
         }
         svt_config->encoder_color_format = color_format;
         svt_config->encoder_bit_depth = (uint8_t)image->depth;
+        svt_config->color_range = svt_range;
 #if !SVT_AV1_CHECK_VERSION(0, 9, 0)
         svt_config->is_16bit_pipeline = image->depth > 8;
 #endif
 
-        // Follow comment in svt header: set if input is HDR10 BT2020 using SMPTE ST2084.
+        // Follow comment in svt header: set if input is HDR10 BT2020 using SMPTE ST2084 (PQ).
         svt_config->high_dynamic_range_input = (image->depth == 10 && image->colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
                                                 image->transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084 &&
                                                 image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT2020_NCL);
@@ -156,8 +159,12 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
             svt_config->tile_columns = tileColsLog2;
         }
         if (encoder->speed != AVIF_SPEED_DEFAULT) {
+#if SVT_AV1_CHECK_VERSION(0, 9, 0)
+            svt_config->enc_mode = (int8_t)encoder->speed;
+#else
             int speed = AVIF_CLAMP(encoder->speed, 0, 8);
             svt_config->enc_mode = (int8_t)speed;
+#endif
         }
 
         if (color_format == EB_YUV422 || image->depth > 10) {
@@ -194,16 +201,38 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
     }
     EbSvtIOFormat * input_picture_buffer = (EbSvtIOFormat *)input_buffer->p_buffer;
 
-    int bytesPerPixel = image->depth > 8 ? 2 : 1;
+    const uint32_t bytesPerPixel = image->depth > 8 ? 2 : 1;
+    const uint32_t uvHeight = (image->height + y_shift) >> y_shift;
     if (alpha) {
         input_picture_buffer->y_stride = image->alphaRowBytes / bytesPerPixel;
         input_picture_buffer->luma = image->alphaPlane;
         input_buffer->n_filled_len = image->alphaRowBytes * image->height;
+
+#if SVT_AV1_CHECK_VERSION(1, 8, 0)
+        // Simulate 4:2:0 UV planes. SVT-AV1 does not support 4:0:0 samples.
+        const uint32_t uvWidth = (image->width + y_shift) >> y_shift;
+        const uint32_t uvRowBytes = uvWidth * bytesPerPixel;
+        const uint32_t uvSize = uvRowBytes * uvHeight;
+        uvPlanes = avifAlloc(uvSize);
+        if (uvPlanes == NULL) {
+            goto cleanup;
+        }
+        memset(uvPlanes, 0, uvSize);
+        input_picture_buffer->cb = uvPlanes;
+        input_buffer->n_filled_len += uvSize;
+        input_picture_buffer->cr = uvPlanes;
+        input_buffer->n_filled_len += uvSize;
+        input_picture_buffer->cb_stride = uvWidth;
+        input_picture_buffer->cr_stride = uvWidth;
+#else
+        // This workaround was not needed before SVT-AV1 1.8.0.
+        // See https://github.com/AOMediaCodec/libavif/issues/1992.
+        (void)uvPlanes;
+#endif
     } else {
         input_picture_buffer->y_stride = image->yuvRowBytes[0] / bytesPerPixel;
         input_picture_buffer->luma = image->yuvPlanes[0];
         input_buffer->n_filled_len = image->yuvRowBytes[0] * image->height;
-        uint32_t uvHeight = (image->height + y_shift) >> y_shift;
         input_picture_buffer->cb = image->yuvPlanes[1];
         input_buffer->n_filled_len += image->yuvRowBytes[1] * uvHeight;
         input_picture_buffer->cr = image->yuvPlanes[2];
@@ -228,6 +257,9 @@ static avifResult svtCodecEncodeImage(avifCodec * codec,
 
     result = dequeue_frame(codec, output, AVIF_FALSE);
 cleanup:
+    if (uvPlanes) {
+        avifFree(uvPlanes);
+    }
     if (input_buffer) {
         if (input_buffer->p_buffer) {
             avifFree(input_buffer->p_buffer);
@@ -281,12 +313,19 @@ static void svtCodecDestroyInternal(avifCodec * codec)
 avifCodec * avifCodecCreateSvt(void)
 {
     avifCodec * codec = (avifCodec *)avifAlloc(sizeof(avifCodec));
+    if (codec == NULL) {
+        return NULL;
+    }
     memset(codec, 0, sizeof(struct avifCodec));
     codec->encodeImage = svtCodecEncodeImage;
     codec->encodeFinish = svtCodecEncodeFinish;
     codec->destroyInternal = svtCodecDestroyInternal;
 
     codec->internal = (struct avifCodecInternal *)avifAlloc(sizeof(avifCodecInternal));
+    if (codec->internal == NULL) {
+        avifFree(codec);
+        return NULL;
+    }
     memset(codec->internal, 0, sizeof(struct avifCodecInternal));
     return codec;
 }
@@ -339,4 +378,3 @@ static avifResult dequeue_frame(avifCodec * codec, avifCodecEncodeOutput * outpu
         return AVIF_RESULT_OK;
     return (res == EB_ErrorNone ? AVIF_RESULT_OK : AVIF_RESULT_UNKNOWN_ERROR);
 }
-#endif

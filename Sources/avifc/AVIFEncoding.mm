@@ -92,7 +92,11 @@ static void releaseSharedPixels(unsigned char * pixels) {
     }
 
     avifRGBImageSetDefaults(&rgb, image.get());
-    avifRGBImageAllocatePixels(&rgb);
+    avifResult convertResult = avifRGBImageAllocatePixels(&rgb);
+    if (convertResult != AVIF_RESULT_OK) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"AVIF initialization failed: %s", avifResultToString(convertResult)] }];
+        return nil;
+    }
     rgb.alphaPremultiplied = false;
     memcpy(rgb.pixels, rgba.get(), rgb.rowBytes * image->height);
     
@@ -111,7 +115,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
     //    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
     
     rgba.reset();
-    avifResult convertResult = avifImageRGBToYUV(image.get(), &rgb);
+    convertResult = avifImageRGBToYUV(image.get(), &rgb);
     if (convertResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgb);
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"convert to YUV failed with result: %s", avifResultToString(convertResult)] }];

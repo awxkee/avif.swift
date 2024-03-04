@@ -66,7 +66,7 @@ void AcesHillToneMapper::Execute(float& r, float& g, float& b) {
 
 #if __arm64__
 
-__attribute__((always_inline))
+__attribute__((flatten))
 static inline float vsumq_f32A(const float32x4_t v) {
     float32x2_t r = vadd_f32(vget_high_f32(v), vget_low_f32(v));
     return vget_lane_f32(vpadd_f32(r, r), 0);

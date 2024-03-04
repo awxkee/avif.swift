@@ -108,8 +108,11 @@ static void XFormDataRelease(void * _Nullable info, const void * _Nullable data,
         rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
     }
     
-    avifRGBImageAllocatePixels(&rgbImage);
-    avifResult rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
+    avifResult rgbResult = avifRGBImageAllocatePixels(&rgbImage);
+    if (rgbResult != AVIF_RESULT_OK) {
+        return nil;
+    }
+    rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgbImage);
         return nil;

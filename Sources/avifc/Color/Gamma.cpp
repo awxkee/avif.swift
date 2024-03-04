@@ -24,7 +24,6 @@
 //
 
 #include "Gamma.hpp"
-#include "Math/FastMath.hpp"
 
 #if defined(__clang__)
 #pragma clang fp contract(on) exceptions(ignore) reassociate(on)
@@ -34,7 +33,7 @@ float LinearITUR709ToITUR709(const float linear) {
     if (linear <= 0.018f) {
         return 4.5f * linear;
     } else {
-        return 1.099f * powf_c(linear, 0.45f) - 0.099f;
+        return 1.099f * std::powf(linear, 0.45f) - 0.099f;
     }
 }
 
@@ -42,7 +41,7 @@ float LinearSRGBToSRGB(const float linearValue) {
     if (linearValue <= 0.0031308) {
         return 12.92f * linearValue;
     } else {
-        return 1.055f * powf_c(linearValue, 1.0f / 2.4f) - 0.055f;
+        return 1.055f * std::powf(linearValue, 1.0f / 2.4f) - 0.055f;
     }
 }
 
@@ -50,12 +49,12 @@ float LinearRec2020ToRec2020(const float linear) {
     if (0 <= betaRec2020 && linear < betaRec2020) {
         return 4.5f * linear;
     } else if (betaRec2020 <= linear && linear < 1) {
-        return alphaRec2020 * powf_c(linear, 0.45f) - (alphaRec2020 - 1.0f);
+        return alphaRec2020 * std::powf(linear, 0.45f) - (alphaRec2020 - 1.0f);
     } else {
         return linear;
     }
 }
 
 float dciP3PQGammaCorrection(const float linear) {
-    return powf_c(linear, 1.0f / 2.6f);
+    return std::powf(linear, 1.0f / 2.6f);
 }

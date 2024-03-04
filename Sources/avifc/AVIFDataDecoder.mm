@@ -171,15 +171,22 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         [inputStream close];
         std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
 
-        avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
-
+        avifResult decodeResult = avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
+        if (decodeResult != AVIF_RESULT_OK) {
+            NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
+            *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(decodeResult)] }];
+            return nil;
+        }
+        
         // Disable strict mode to keep some AVIF image compatible
         decoder->strictFlags = AVIF_STRICT_DISABLED;
         decoder->ignoreXMP = true;
         decoder->ignoreExif = true;
         int hwThreads = std::thread::hardware_concurrency();
         decoder->maxThreads = hwThreads;
-        avifResult decodeResult = avifDecoderParse(decoder.get());
+        decodeResult = avifDecoderParse(decoder.get());
         if (decodeResult != AVIF_RESULT_OK) {
             NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
             *error = [[NSError alloc] initWithDomain:@"AVIF"
@@ -211,8 +218,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
             }
 
             if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor,
-                                (float)decoder->image->height*resizeFactor, AVIF_DEFAULT_IMAGE_SIZE_LIMIT,
-                                (uint32_t) maxContentSize, &decoder->diag)) {
+                                (float)decoder->image->height*resizeFactor, &decoder->diag)) {
                 return nil;
             }
         }

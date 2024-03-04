@@ -37,12 +37,12 @@ T lerp(const T& a, const T& b, float t) {
 
 #if __arm64__
 
-__attribute__((always_inline))
+__attribute__((flatten))
 inline float32x4_t lerpNEON(const float32x4_t a, const float32x4_t b, float32x4_t t) {
     return vmlaq_f32(a, t, vsubq_f32(b, a));
 }
 
-__attribute__((always_inline))
+__attribute__((flatten))
 inline float32x4_t reinhardNEON(const float32x4_t v, const float lumaMaximum, const bool useExtended) {
     if (useExtended) {
         return vdivq_f32(vmulq_f32(v, vaddq_f32(vdupq_n_f32(1), vdivq_f32(v, vdupq_n_f32(lumaMaximum * lumaMaximum)))),

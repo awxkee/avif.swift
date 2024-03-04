@@ -26,13 +26,13 @@
 #ifndef SMPTE428_H
 #define SMPTE428_H
 
-#import "Math/MathPowf.hpp"
 #import "NEMath.h"
+#include <algorithm>
 
 #if __arm64__
 #include <arm_neon.h>
 
-__attribute__((always_inline))
+__attribute__((flatten))
 static inline float32x4_t SMPTE428ToLinear(const float32x4_t v) {
     const float32x4_t r = vltq_n_f32(v, 0.0f, 0.0f);
     const float mul = 52.37f / 48.0f;
@@ -41,13 +41,14 @@ static inline float32x4_t SMPTE428ToLinear(const float32x4_t v) {
 
 #endif
 
-float SMPTE428ToLinear(const float value)
+__attribute__((flatten))
+inline float SMPTE428ToLinear(const float value)
 {
     if (value < 0.0f) {
         return 0.0f;
     }
     constexpr float scale = 52.37f / 48.0f;
-    return powf_c(value, 2.6f) * scale;
+    return std::powf(value, 2.6f) * scale;
 }
 
 #endif /* SMPTE428_H */

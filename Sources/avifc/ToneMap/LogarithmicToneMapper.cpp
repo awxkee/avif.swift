@@ -26,7 +26,6 @@
 #include "LogarithmicToneMapper.hpp"
 #include <algorithm>
 #include "NEMath.h"
-#include "Math/FastMath.hpp"
 
 #if defined(__clang__)
 #pragma clang fp contract(fast) exceptions(ignore) reassociate(on)
@@ -42,7 +41,7 @@ void LogarithmicToneMapper::Execute(float& r, float& g, float &b) {
     b *= exposure;
     const float Lin = Luma(r, g, b);
 #if __arm64__
-    const float Lout = vgetq_lane_f32(vdivq_f32(vlog10q_f32(vdupq_n_f32(fabsf_c(1.0 + curve * Lin))), vDenVec), 0);
+    const float Lout = vgetq_lane_f32(vdivq_f32(vlog10q_f32(vdupq_n_f32(std::abs(1.0f + curve * Lin))), vDenVec), 0);
 #else
     const float Lout = log10f_c(abs(1.0 + curve * Lin)) / den;
 #endif
@@ -60,7 +59,7 @@ void LogarithmicToneMapper::Execute(float& r, float& g, float &b) {
 float32x4_t LogarithmicToneMapper::Execute(const float32x4_t m) {
     const float32x4_t v = vmulq_n_f32(m, exposure);
     const float Lin = vaddvq_f32(vmulq_f32(v, vLumaVec));
-    const float Lout = vgetq_lane_f32(vmulq_f32(vlog10q_f32(vdupq_n_f32(fabsf_c(1.0 + curve * Lin))), vDenVec), 0);
+    const float Lout = vgetq_lane_f32(vmulq_f32(vlog10q_f32(vdupq_n_f32(std::abs(1.0f + curve * Lin))), vDenVec), 0);
     const float scale = Lout / Lin;
     if (scale == 1) {
         return v;
