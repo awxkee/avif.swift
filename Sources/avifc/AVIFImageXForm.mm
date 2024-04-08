@@ -34,6 +34,7 @@
 #import "RgbTransfer.h"
 #import <avif/internal.h>
 #import "Color/Colorspace.h"
+#import "AVIFRGBAMultiplier.h"
 
 class XFormDataContainer {
 public:
@@ -107,7 +108,6 @@ static void XFormDataRelease(void * _Nullable info, const void * _Nullable data,
         rgbImage.depth = 8;
         rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
     }
-    
     avifResult rgbResult = avifRGBImageAllocatePixels(&rgbImage);
     if (rgbResult != AVIF_RESULT_OK) {
         return nil;
@@ -137,7 +137,7 @@ static void XFormDataRelease(void * _Nullable info, const void * _Nullable data,
         avifRGBImageFreePixels(&rgbImage);
         return nil;
     }
-    
+
     avifRGBImageFreePixels(&rgbImage);
     
     CGColorSpaceRef colorSpace;

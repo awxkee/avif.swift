@@ -49,6 +49,8 @@ let package = Package(
                     .define("AVIF_CODEC_DAV1D", to: "1"),
                     .define("AVIF_LIBYUV_ENABLED", to: "1"),
                     .define("AVIF_LIBSHARPYUV_ENABLED", to: "1"),
+                    .define("AVIF_ENABLE_EXPERIMENTAL_YCGCO_R", to: "1"),
+                    .define("AVIF_ENABLE_EXPERIMENTAL_GAIN_MAP", to: "1"),
                     .define("AVIF_CODEC_SVT", to: "1")
                 ],
                 cxxSettings: [

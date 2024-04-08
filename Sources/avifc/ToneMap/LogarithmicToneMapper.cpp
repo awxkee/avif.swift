@@ -43,7 +43,7 @@ void LogarithmicToneMapper::Execute(float& r, float& g, float &b) {
 #if __arm64__
     const float Lout = vgetq_lane_f32(vdivq_f32(vlog10q_f32(vdupq_n_f32(std::abs(1.0f + curve * Lin))), vDenVec), 0);
 #else
-    const float Lout = log10f_c(abs(1.0 + curve * Lin)) / den;
+    const float Lout = std::log10f(abs(1.0 + curve * Lin)) / den;
 #endif
     const float scale = Lout / Lin;
     if (scale == 1) {

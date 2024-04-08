@@ -83,14 +83,21 @@
         return nil;
     }
     avifRGBImageSetDefaults(&rgb, image);
-    avifRGBImageAllocatePixels(&rgb);
+    avifResult convertResult = avifRGBImageAllocatePixels(&rgb);
+    if (convertResult != AVIF_RESULT_OK) {
+        avifImageDestroy(image);
+        [self cleanUp];
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 
+                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"allocating RGB planes has failed: %s", avifResultToString(convertResult)] }];
+        return nil;
+    }
     rgb.depth = 8;
     rgb.alphaPremultiplied = false;
     memcpy(rgb.pixels, rgba, rgb.rowBytes * image->height);
     
     free(rgba);
     
-    avifResult convertResult = avifImageRGBToYUV(image, &rgb);
+    convertResult = avifImageRGBToYUV(image, &rgb);
     if (convertResult != AVIF_RESULT_OK) {
         avifRGBImageFreePixels(&rgb);
         avifImageDestroy(image);

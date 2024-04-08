@@ -88,11 +88,17 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 
 - (nullable NSValue*)readSize:(nonnull NSData*)data error:(NSError *_Nullable * _Nullable)error {
     std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
-    avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
+    avifResult decodeResult = avifDecoderSetIOMemory(decoder.get(), reinterpret_cast<const uint8_t *>(data.bytes), data.length);
+    if (decodeResult != AVIF_RESULT_OK) {
+        *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"Failed to set IO: %s", avifResultToString(decodeResult)] }];
+        return nil;
+    }
 
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
-    avifResult decodeResult = avifDecoderParse(decoder.get());
+    decodeResult = avifDecoderParse(decoder.get());
     if (decodeResult != AVIF_RESULT_OK) {
         NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
         *error = [[NSError alloc] initWithDomain:@"AVIF"
@@ -111,11 +117,18 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 
 - (nullable NSValue*)readSizeFromPath:(nonnull NSString*)path error:(NSError *_Nullable * _Nullable)error {
     std::shared_ptr<avifDecoder> decoder(avifDecoderCreate(), sharedDecoderDeallocator);
-    avifDecoderSetIOFile(decoder.get(), [path UTF8String]);
+    avifResult decodeResult = avifDecoderSetIOFile(decoder.get(), [path UTF8String]);
+    if (decodeResult != AVIF_RESULT_OK) {
+        *error = [[NSError alloc] initWithDomain:@"AVIF"
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"Failed to set IO: %s", avifResultToString(decodeResult)] }];
+        return nil;
+    }
+
 
     // Disable strict mode to keep some AVIF image compatible
     decoder->strictFlags = AVIF_STRICT_DISABLED;
-    avifResult decodeResult = avifDecoderParse(decoder.get());
+    decodeResult = avifDecoderParse(decoder.get());
     if (decodeResult != AVIF_RESULT_OK) {
         *error = [[NSError alloc] initWithDomain:@"AVIF"
                                             code:500
