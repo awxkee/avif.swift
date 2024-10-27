@@ -15,12 +15,12 @@ let package = Package(
             targets: ["avifnuke"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/awxkee/libaom.swift.git", "1.0.0"..<"1.1.0"),
-        .package(url: "https://github.com/awxkee/libdav1d.swift.git", "1.1.0"..<"1.2.0"),
-        .package(url: "https://github.com/awxkee/libyuv.swift.git", "1.0.0"..<"1.1.0"),
-        .package(url: "https://github.com/awxkee/libwebp-ios.git", "1.1.0"..<"1.2.0"),
+        .package(url: "https://github.com/awxkee/libaom.swift.git", "1.1.0"..<"1.2.0"),
+        .package(url: "https://github.com/awxkee/libdav1d.swift.git", "1.2.0"..<"1.3.0"),
+        .package(url: "https://github.com/awxkee/libyuv.swift.git", "1.1.0"..<"1.2.0"),
+        .package(url: "https://github.com/awxkee/libwebp-ios.git", "1.2.0"..<"1.3.0"),
         .package(url: "https://github.com/kean/Nuke.git", "12.0.0"..<"13.0.0"),
-        .package(url: "https://github.com/awxkee/libsvtav1enc.swift", "1.0.0"..<"1.1.0")
+        .package(url: "https://github.com/awxkee/libsvtav1enc.swift", "1.1.0"..<"1.2.0")
     ],
     targets: [
         .target(
