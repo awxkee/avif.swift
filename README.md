@@ -34,7 +34,7 @@ import avif
 // Decompress data
 let uiImage: UIImage? = AVIFDecoder.decode(Data(), sampleSize: .zero) // or any max CGSize of image
 // Compress
-let data: Data = try AVIFEncoder().encode(image: UIImage())
+let data: Data = try AVIFEncoder.encode(image: UIImage())
 
 // Decode animated
 let animatedDecoder = AnimatedDecoder(withData: Data())
