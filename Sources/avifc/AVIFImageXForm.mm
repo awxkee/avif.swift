@@ -28,13 +28,13 @@
 #import <vector>
 #import <Accelerate/Accelerate.h>
 #import <CoreGraphics/CoreGraphics.h>
-#import "HDRColorTransfer.h"
 #import "TargetConditionals.h"
-#import "Rgb1010102Converter.h"
 #import "RgbTransfer.h"
 #import <avif/internal.h>
-#import "Color/Colorspace.h"
-#import "AVIFRGBAMultiplier.h"
+#import "ColorSpace.h"
+#import "avifpixart.h"
+
+using namespace std;
 
 class XFormDataContainer {
 public:
@@ -61,297 +61,470 @@ static void XFormDataRelease(void * _Nullable info, const void * _Nullable data,
     }
 }
 
+struct AvifImageHandle {
+    std::vector<uint8_t> data;
+    uint32_t stride;
+    uint32_t width;
+    uint32_t height;
+    uint32_t bitDepth;
+    uint32_t components;
+};
+
+#define AVIF_CHECK_RGB_PLANES_OR_RETURN(imagePtr, resultPtr)                 \
+if ((imagePtr)->yuvPlanes[0] == nullptr ||                           \
+(imagePtr)->yuvPlanes[1] == nullptr ||                           \
+(imagePtr)->yuvPlanes[2] == nullptr) {                           \
+*(resultPtr) = AVIF_RESULT_UNKNOWN_ERROR;                        \
+return AvifImageHandle {                                         \
+.data = std::vector<uint8_t>(),                              \
+.stride = 0,                                                 \
+.width = 0,                                                  \
+.height = 0,                                                 \
+.bitDepth = 0,                                               \
+.components = 0                                              \
+};                                                               \
+}                                                                    \
+
+#define AVIF_CHECK_RGBA_PLANES_OR_RETURN(imagePtr, resultPtr)                 \
+if ((imagePtr)->yuvPlanes[0] == nullptr ||                           \
+(imagePtr)->yuvPlanes[1] == nullptr ||                           \
+(imagePtr)->yuvPlanes[2] == nullptr ||                           \
+(imagePtr)->alphaPlane == nullptr) {                             \
+*(resultPtr) = AVIF_RESULT_UNKNOWN_ERROR;                        \
+return AvifImageHandle {                                         \
+.data = std::vector<uint8_t>(),                              \
+.stride = 0,                                                 \
+.width = 0,                                                  \
+.height = 0,                                                 \
+.bitDepth = 0,                                               \
+.components = 0                                              \
+};                                                               \
+}                                                                    \
+
+
+#define AVIF_CHECK_NOT_YUV400_OR_RETURN(imagePtr, resultPtr)                 \
+if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) {                  \
+*(resultPtr) = AVIF_RESULT_UNKNOWN_ERROR;                        \
+return AvifImageHandle {                                         \
+.data = std::vector<uint8_t>(),                              \
+.stride = 0,                                                 \
+.width = 0,                                                  \
+.height = 0,                                                 \
+.bitDepth = 0,                                               \
+.components = 0                                              \
+};                                                               \
+}                                                                    \
+
+#define RETURN_ERROR_HANDLE(result_ptr)                     \
+*(result_ptr) = AVIF_RESULT_UNKNOWN_ERROR;          \
+return AvifImageHandle {                            \
+.data = std::vector<uint8_t>(),                 \
+.stride = 0,                                    \
+.width = 0,                                     \
+.height = 0,                                    \
+.bitDepth = 0,                                  \
+.components = 0                                 \
+};                                              \
+
 @implementation AVIFImageXForm
 
-+(bool)RGBA8toF16:(nonnull uint8_t*)data dst:(nonnull uint8_t*)dst stride:(int)stride width:(int)width height:(int)height {
-    int newStride = width * sizeof(uint16_t) * 4;
-    
-    vImage_Buffer srcBuffer = {
-        .data = (void*)data,
-        .width = static_cast<vImagePixelCount>(width * 4),
-        .height = static_cast<vImagePixelCount>(height),
-        .rowBytes = static_cast<size_t>(stride)
-    };
-    
-    vImage_Buffer dstBuffer = {
-        .data = dst,
-        .width = static_cast<vImagePixelCount>(width * 4),
-        .height = static_cast<vImagePixelCount>(height),
-        .rowBytes = static_cast<size_t>(newStride)
-    };
-    vImage_Error vEerror = vImageConvert_Planar8toPlanar16F(&srcBuffer, &dstBuffer, kvImageNoFlags);
-    if (vEerror != kvImageNoError) {
-        return false;
++(AvifImageHandle)handleImage:(nonnull avifImage*)image result:(int*)result {
+    if (image == nullptr) {
+        RETURN_ERROR_HANDLE(result);
     }
-    return true;
+    auto imageUsesAlpha = image->imageOwnsAlphaPlane || image->alphaPlane != nullptr;
+    
+    *result = AVIF_RESULT_OK;
+    
+    uint32_t components = imageUsesAlpha ? 4 : 3;
+    avifMatrixCoefficients matrixCoefficients = image->matrixCoefficients;
+    avifRange avifYuvRange = image->yuvRange;
+    YuvRange pixartYuvRange = YuvRange::Pc;
+    if (avifYuvRange == AVIF_RANGE_LIMITED) {
+        pixartYuvRange = YuvRange::Tv;
+    }
+    
+    bool highBitDepth = image->depth > 8;
+    
+    YuvType yuvType = YuvType::Yuv420;
+    
+    if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV422) {
+        yuvType = YuvType::Yuv422;
+    } else if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV444) {
+        yuvType = YuvType::Yuv444;
+    }
+    
+    if ((matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RE
+         || matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO)
+        && image->depth == 10) {
+        if (components == 3) {
+            AVIF_CHECK_RGB_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 3;
+            std::vector<uint8_t> data(stride * image->height);
+            AvifYCgCoRType rType = AvifYCgCoRType::Re;
+            if (matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+                rType = AvifYCgCoRType::Ro;
+            }
+            pixart_icgc_r_type_to_rgb(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                      reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                      reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                      data.data(), stride,
+                                      image->width, image->height,
+                                      pixartYuvRange, rType, yuvType);
+            
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = 8,
+                .components = 3
+            };
+        } else if (components == 4) {
+            AVIF_CHECK_RGBA_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 4;
+            std::vector<uint8_t> data(stride * image->height);
+            AvifYCgCoRType rType = AvifYCgCoRType::Re;
+            if (matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+                rType = AvifYCgCoRType::Ro;
+            }
+            pixart_icgc_r_type_with_alpha_to_rgba(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                                  reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                                  reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                                  reinterpret_cast<const uint16_t*>(image->alphaPlane), image->alphaRowBytes,
+                                                  data.data(), stride,
+                                                  image->width, image->height,
+                                                  pixartYuvRange, rType, yuvType);
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = 8,
+                .components = 4
+            };
+        } else {
+            RETURN_ERROR_HANDLE(result);
+        }
+    }
+    
+    YuvMatrix matrix = YuvMatrix::Bt709;
+    if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT601) {
+        matrix = YuvMatrix::Bt601;
+    } else if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT2020_NCL
+               || image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_SMPTE2085) {
+        matrix = YuvMatrix::Bt2020;
+    } else if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) {
+        matrix = YuvMatrix::Identity;
+        if (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444) {
+            RETURN_ERROR_HANDLE(result);
+        }
+    } else if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO) {
+        matrix = YuvMatrix::YCgCo;
+    }
+    
+    uint32_t bitDepth = image->depth;
+    
+    if (image->yuvFormat == AVIF_PIXEL_FORMAT_YUV400) {
+        if (image->yuvPlanes[0] == nullptr) {
+            RETURN_ERROR_HANDLE(result);
+        }
+        if (highBitDepth) {
+            if (components == 3) {
+                uint32_t stride = image->width * 3 * sizeof(uint16_t);
+                std::vector<uint8_t> data(stride * image->height);
+                pixart_yuv400_p16_to_rgb16(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                           reinterpret_cast<uint16_t*>(data.data()), stride,
+                                           bitDepth,
+                                           image->width, image->height,
+                                           pixartYuvRange, matrix);
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = bitDepth,
+                    .components = 3
+                };
+            } else if (components == 4) {
+                if (image->alphaPlane == nullptr) {
+                    RETURN_ERROR_HANDLE(result);
+                }
+                uint32_t stride = image->width * 4;
+                std::vector<uint8_t> data(stride * image->height);
+                pixart_yuv400_p16_with_alpha_to_rgba16(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                                       reinterpret_cast<const uint16_t*>(image->alphaPlane), image->alphaRowBytes,
+                                                       reinterpret_cast<uint16_t*>(data.data()), stride,
+                                                       bitDepth,
+                                                       image->width, image->height,
+                                                       pixartYuvRange, matrix);
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = bitDepth,
+                    .components = 4
+                };
+            }
+        } else {
+            if (components == 3) {
+                uint32_t stride = image->width * 3;
+                std::vector<uint8_t> data(stride * image->height);
+                pixart_yuv400_to_rgb8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                                      data.data(), stride,
+                                      image->width, image->height,
+                                      pixartYuvRange, matrix);
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = 8,
+                    .components = 3
+                };
+            } else if (components == 4) {
+                if (image->alphaPlane == nullptr) {
+                    RETURN_ERROR_HANDLE(result);
+                }
+                uint32_t stride = image->width * 4;
+                std::vector<uint8_t> data(stride * image->height);
+                pixart_yuv400_with_alpha_to_rgba8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                                                  image->alphaPlane, image->alphaRowBytes,
+                                                  data.data(), stride,
+                                                  image->width, image->height,
+                                                  pixartYuvRange, matrix);
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = 8,
+                    .components = 4
+                };
+            }
+        }
+    }
+    
+    if (matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RE
+        || matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+        if (image->depth == 12) {
+            if (components == 3) {
+                AVIF_CHECK_RGB_PLANES_OR_RETURN(image, result);
+                AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+                uint32_t stride = image->width * 3 * sizeof(uint16_t);
+                std::vector<uint8_t> data(stride * image->height);
+                AvifYCgCoRType rType = AvifYCgCoRType::Re;
+                if (matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+                    rType = AvifYCgCoRType::Ro;
+                }
+                bitDepth = 10;
+                pixart_icgc12_r_to_rgb10(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                         reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                         reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                         reinterpret_cast<uint16_t*>(data.data()), stride,
+                                         image->width, image->height,
+                                         pixartYuvRange, rType, yuvType);
+                
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = 8,
+                    .components = 3
+                };
+            } else if (components == 4) {
+                AVIF_CHECK_RGBA_PLANES_OR_RETURN(image, result);
+                AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+                uint32_t stride = image->width * 4 * sizeof(uint16_t);
+                std::vector<uint8_t> data(stride * image->height);
+                AvifYCgCoRType rType = AvifYCgCoRType::Re;
+                if (matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_YCGCO_RO) {
+                    rType = AvifYCgCoRType::Ro;
+                }
+                bitDepth = 10;
+                pixart_icgc_r_alpha12_to_rgba10(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                                reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                                reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                                reinterpret_cast<const uint16_t*>(image->alphaPlane), image->alphaRowBytes,
+                                                reinterpret_cast<uint16_t*>(data.data()), stride,
+                                                image->width, image->height,
+                                                pixartYuvRange, rType, yuvType);
+                return AvifImageHandle {
+                    .data = data,
+                    .stride = stride,
+                    .width = image->width,
+                    .height = image->height,
+                    .bitDepth = 8,
+                    .components = 4
+                };
+            } else {
+                RETURN_ERROR_HANDLE(result);
+            }
+        } else {
+            RETURN_ERROR_HANDLE(result);
+        }
+    }
+    
+    if (highBitDepth) {
+        if (components == 3) {
+            AVIF_CHECK_RGB_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 3 * sizeof(uint16_t);
+            std::vector<uint8_t> data(stride * image->height);
+            pixart_yuv16_to_rgb16(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                  reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                  reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                  reinterpret_cast<uint16_t*>(data.data()), stride,
+                                  bitDepth,
+                                  image->width, image->height,
+                                  pixartYuvRange, matrix, yuvType);
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = bitDepth,
+                .components = 3
+            };
+        } else if (components == 4) {
+            AVIF_CHECK_RGBA_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 4 * sizeof(uint16_t);
+            std::vector<uint8_t> data(stride * image->height);
+            pixart_yuv16_with_alpha_to_rgba16(reinterpret_cast<const uint16_t*>(image->yuvPlanes[0]), image->yuvRowBytes[0],
+                                              reinterpret_cast<const uint16_t*>(image->yuvPlanes[1]), image->yuvRowBytes[1],
+                                              reinterpret_cast<const uint16_t*>(image->yuvPlanes[2]), image->yuvRowBytes[2],
+                                              reinterpret_cast<const uint16_t*>(image->alphaPlane), image->alphaRowBytes,
+                                              reinterpret_cast<uint16_t*>(data.data()), stride,
+                                              bitDepth,
+                                              image->width, image->height,
+                                              pixartYuvRange, matrix, yuvType);
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = bitDepth,
+                .components = 4
+            };
+        }
+    } else {
+        if (components == 3) {
+            AVIF_CHECK_RGB_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 3;
+            std::vector<uint8_t> data(stride * image->height);
+            pixart_yuv8_to_rgb8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                                image->yuvPlanes[1], image->yuvRowBytes[1],
+                                image->yuvPlanes[2], image->yuvRowBytes[2],
+                                data.data(), stride,
+                                image->width, image->height,
+                                pixartYuvRange, matrix, yuvType);
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = bitDepth,
+                .components = 3
+            };
+        } else if (components == 4) {
+            AVIF_CHECK_RGBA_PLANES_OR_RETURN(image, result);
+            AVIF_CHECK_NOT_YUV400_OR_RETURN(image, result);
+            uint32_t stride = image->width * 4;
+            std::vector<uint8_t> data(stride * image->height);
+            pixart_yuv8_with_alpha_to_rgba8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                                            image->yuvPlanes[1], image->yuvRowBytes[1],
+                                            image->yuvPlanes[2], image->yuvRowBytes[2],
+                                            image->alphaPlane, image->alphaRowBytes,
+                                            data.data(), stride,
+                                            image->width, image->height,
+                                            pixartYuvRange, matrix, yuvType);
+            return AvifImageHandle {
+                .data = data,
+                .stride = stride,
+                .width = image->width,
+                .height = image->height,
+                .bitDepth = bitDepth,
+                .components = 4
+            };
+        }
+    }
+    
+    RETURN_ERROR_HANDLE(result);
 }
 
 - (_Nullable CGImageRef)formCGImage:(nonnull avifDecoder*)decoder scale:(CGFloat)scale {
-    avifRGBImage rgbImage;
-    avifRGBImageSetDefaults(&rgbImage, decoder->image);
     
-    auto imageUsesAlpha = decoder->image->imageOwnsAlphaPlane || decoder->image->alphaPlane != nullptr;
-    
-    int components = imageUsesAlpha ? 4 : 3;
+    int avifHandleResult = AVIF_RESULT_UNKNOWN_ERROR;
+    auto decodedImage = [AVIFImageXForm handleImage:decoder->image result:&avifHandleResult];
+    if (avifHandleResult != AVIF_RESULT_OK) {
+        return nullptr;
+    }
     
     auto colorPrimaries = decoder->image->colorPrimaries;
     auto transferCharacteristics = decoder->image->transferCharacteristics;
     
-    bool isImageRequires64Bit = avifImageUsesU16(decoder->image);
-    if (isImageRequires64Bit) {
-        rgbImage.alphaPremultiplied = false;
-        rgbImage.isFloat = true;
-        rgbImage.depth = 16;
-        rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
-    } else {
-        rgbImage.alphaPremultiplied = false;
-        rgbImage.depth = 8;
-        rgbImage.format = imageUsesAlpha ? AVIF_RGB_FORMAT_RGBA : AVIF_RGB_FORMAT_RGB;
-    }
-    avifResult rgbResult = avifRGBImageAllocatePixels(&rgbImage);
-    if (rgbResult != AVIF_RESULT_OK) {
-        return nil;
-    }
-    rgbResult = avifImageYUVToRGB(decoder->image, &rgbImage);
-    if (rgbResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgbImage);
-        return nil;
-    }
+    auto mColorSpaceDef = [ColorSpace queryColorSpace:colorPrimaries transferCharacteristics:transferCharacteristics];
     
-    int newWidth = rgbImage.width;
-    int newHeight = rgbImage.height;
-    int newRowBytes = rgbImage.rowBytes;
-    int depth = decoder->image->depth == 10 ? 10 : (decoder->image->depth > 8 ? 16 : 8);
-    int srcStride = rgbImage.rowBytes;
+    bool useHDR = mColorSpaceDef.wideGamut;
     
-    int newLineWidth = newWidth * static_cast<int>(isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t)) * components;
-    int alignment = 64;
-    int padding = (alignment - (newLineWidth % alignment)) % alignment;
-    int stride = newLineWidth + padding;
+    CGColorSpaceRef colorSpace = nullptr;
     
-    vector<uint8_t> mPixelsVector(stride * newHeight);
-    
-    if (![RgbTransfer CopyBuffer:rgbImage.pixels srcStride:srcStride dst:mPixelsVector.data()
-                       dstStride:stride width:newWidth height:newHeight
-                       pixelSize:isImageRequires64Bit ? sizeof(uint16_t) : sizeof(uint8_t) components:components]) {
-        avifRGBImageFreePixels(&rgbImage);
-        return nil;
-    }
-
-    avifRGBImageFreePixels(&rgbImage);
-    
-    CGColorSpaceRef colorSpace;
-    bool useHDR = false;
     if(decoder->image->icc.data && decoder->image->icc.size) {
         CFDataRef iccData = CFDataCreate(kCFAllocatorDefault, decoder->image->icc.data, decoder->image->icc.size);
         colorSpace = CGColorSpaceCreateWithICCData(iccData);
         CFRelease(iccData);
-    } else {
-        if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 &&
-            transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_BT709) {
-            CGColorSpaceRef bt709 = NULL;
-            if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-                bt709 = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
-            } else {
-                bt709 = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = bt709;
-        }
-        else if(colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 /* sRGB */ &&
-                transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SRGB) {
-            CGColorSpaceRef sRGB = NULL;
-            if (@available(macOS 10.5, iOS 9.0, tvOS 9.0, *)) {
-                sRGB = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-            } else {
-                sRGB = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = sRGB;
-        }
-        else if(colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 /* sRGB */ &&
-                transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
-            CGColorSpaceRef sRGBlinear = NULL;
-            if (@available(macOS 10.12, iOS 10.0, tvOS 10.0, *)) {
-                sRGBlinear = CGColorSpaceCreateWithName(kCGColorSpaceLinearSRGB);
-            } else {
-                sRGBlinear = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = sRGBlinear;
-        }
-        else if(colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_BT2020_10BIT ||
-                 transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_BT2020_12BIT)) {
-            CGColorSpaceRef bt2020 = NULL;
-            if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-                bt2020 = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
-            } else {
-                bt2020 = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = bt2020;
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
-            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            ColorGammaCorrection gamma = Rec2020;
-            TransferFunction function;
-            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
-                function = PQ;
-            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-                function = HLG;
-            } else {
-                function = SMPTE428;
-            }
-            if (@available(iOS 15.0, *)) {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearITUR_2020);
-                gamma = Linear;
-            } else {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
-                gamma = Rec2020;
-            }
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
-                                stride:stride width:newWidth height:newHeight
-                                   U16:depth > 8 depth:depth half:depth > 8
-                             primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr
-                               profile:rec2020Profile];
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT2020 &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
-            static CGColorSpaceRef bt2020linear = NULL;
-            if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
-                bt2020linear = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearITUR_2020);
-            } else {
-                bt2020linear = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = bt2020linear;
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SRGB) {
-            CGColorSpaceRef p3 = NULL;
-            if (@available(macOS 10.11.2, iOS 9.3, tvOS 9.3, *)) {
-                p3 = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
-            } else {
-                p3 = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = p3;
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
-            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            ColorGammaCorrection gamma;
-            TransferFunction function;
-            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
-                function = PQ;
-            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-                function = HLG;
-            } else {
-                function = SMPTE428;
-            }
-            if (@available(iOS 15.0, *)) {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceLinearDisplayP3);
-                gamma = Linear;
-            } else {
-                colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
-                gamma = DisplayP3;
-            }
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
-                                stride:stride width:newWidth height:newHeight
-                                   U16:depth > 8 depth:depth half:depth > 8
-                             primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr
-                               profile:displayP3Profile];
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_BT709 /* Rec 709 */ &&
-                   (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
-                    || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428)) {
-            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            ColorGammaCorrection gamma = Rec709;
-            TransferFunction function;
-            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
-                function = PQ;
-            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-                function = HLG;
-            } else {
-                function = SMPTE428;
-            }
-            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
-                                stride:stride width:newWidth height:newHeight
-                                   U16:depth > 8 depth:depth half:depth > 8
-                             primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function matrix:nullptr
-                               profile:rec709Profile];
-        } else if (colorPrimaries == AVIF_COLOR_PRIMARIES_SMPTE432 /* Display P3 */ &&
-                   transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_LINEAR) {
-            CGColorSpaceRef p3linear = NULL;
-            if (@available(macOS 10.14.3, iOS 12.3, tvOS 12.3, *)) {
-                p3linear = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearDisplayP3);
-            } else {
-                p3linear = CGColorSpaceCreateDeviceRGB();
-            }
-            colorSpace = p3linear;
-        } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084
-                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG
-                   || transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE428) {
-            // IF Transfer function but we don't know the color space the we will convert it always to Display P3
-            float lumaPrimaries[3] = { 0.2627f, 0.6780f, 0.0593f };
-            ColorGammaCorrection gamma = DisplayP3;
-            TransferFunction function;
-            if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_SMPTE2084) {
-                function = PQ;
-            } else if (transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_HLG) {
-                function = HLG;
-            } else {
-                function = SMPTE428;
-            }
-            colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
-            
-            float primaries[8];
-            avifColorPrimariesGetValues(colorPrimaries, &primaries[0]);
-            
-            const float primariesXy[3][2] = {
-                {primaries[0], primaries[1]},
-                {primaries[2], primaries[3]},
-                {primaries[4], primaries[5]},
-            };
-            const float whitePoint[2] = {primaries[6], primaries[7]};
-            
-            ColorSpaceMatrix originalMatrix = ColorSpaceMatrix(primariesXy, whitePoint);
-            ColorSpaceMatrix transformation = displayP3Profile->toMatrix().inverted() * originalMatrix;
-            
-            [HDRColorTransfer transfer:reinterpret_cast<uint8_t*>(mPixelsVector.data())
-                                stride:stride width:newWidth height:newHeight
-                                   U16:depth > 8 depth:depth half:depth > 8
-                             primaries:lumaPrimaries components:components
-                       gammaCorrection:gamma function:function
-                                matrix:&transformation profile:displayP3Profile];
-        } else {
-            colorSpace = CGColorSpaceCreateDeviceRGB();
-        }
     }
     
     if (!colorSpace) {
-        colorSpace = CGColorSpaceCreateDeviceRGB();
+        colorSpace = mColorSpaceDef.mRef;
     }
     int flags;
     bool use10Bits = false;
-    if (depth == 10 && !useHDR) {
+    
+    uint32_t depth = decodedImage.bitDepth;
+    uint32_t newWidth = decodedImage.width;
+    uint32_t newHeight = decodedImage.height;
+    uint32_t stride = decodedImage.stride;
+    auto components = decodedImage.components;
+    auto imageUsesAlpha = decodedImage.components == 4;
+    auto isImageRequires64Bit = decodedImage.bitDepth > 8;
+    
+    if ((depth == 10 || depth == 12 || depth == 16) && !useHDR && components == 3) {
         flags = (int)kCGImageByteOrderDefault | (int)kCGImagePixelFormatRGB101010 | (int)kCGImageAlphaLast;
-        int lineWidth = newWidth * static_cast<int>(sizeof(uint32_t));
-        int alignment = 64;
-        int padding = (alignment - (lineWidth % alignment)) % alignment;
-        int dstStride = lineWidth + padding;
+        uint32_t lineWidth = newWidth * static_cast<uint32_t>(sizeof(uint32_t));
+        uint32_t dstStride = lineWidth;
         vector<uint8_t> mVecRgb1010102(dstStride * newHeight);
         use10Bits = true;
-        if (![Rgb1010102Converter F16ToRGBA1010102:mPixelsVector.data() stride:stride
-                                               dst:mVecRgb1010102.data() dstStride:dstStride
-                                             width:newWidth height:newHeight components:components]) {
-            return NULL;
+        if (components == 3) {
+            pixart_rgb_u16_to_ra30(reinterpret_cast<const uint16_t*>(decodedImage.data.data()), stride,
+                                   mVecRgb1010102.data(), dstStride, depth, newWidth, newHeight);
+        } else if (components == 4) {
+            pixart_rgba_u16_to_ra30(reinterpret_cast<const uint16_t*>(decodedImage.data.data()), stride,
+                                    mVecRgb1010102.data(), dstStride, depth, newWidth, newHeight);
         }
         components = 4;
+        depth = 10;
         stride = dstStride;
-        mPixelsVector = mVecRgb1010102;
+        decodedImage.data = std::move(mVecRgb1010102);
     } else {
         if (isImageRequires64Bit) {
+            if (components == 3) {
+                pixart_rgb_u16_to_f16(reinterpret_cast<const uint16_t*>(decodedImage.data.data()), stride,
+                                      reinterpret_cast<uint16_t*>(decodedImage.data.data()), stride,
+                                      decodedImage.bitDepth,
+                                      decodedImage.width, decodedImage.height);
+            } else if (components == 4) {
+                pixart_rgba_u16_to_f16(reinterpret_cast<const uint16_t*>(decodedImage.data.data()), stride,
+                                       reinterpret_cast<uint16_t*>(decodedImage.data.data()), stride,
+                                       decodedImage.bitDepth,
+                                       decodedImage.width, decodedImage.height);
+            }
             flags = (int)kCGImageByteOrder16Little | (int)kCGBitmapFloatComponents;
             if (imageUsesAlpha) {
                 flags |= (int)kCGImageAlphaLast;
@@ -368,7 +541,8 @@ static void XFormDataRelease(void * _Nullable info, const void * _Nullable data,
             }
         }
     }
-    XFormDataContainer* container = new XFormDataContainer(mPixelsVector);
+    auto copiedData = std::move(decodedImage.data);
+    XFormDataContainer* container = new XFormDataContainer(copiedData);
     CGDataProviderRef provider = CGDataProviderCreateWithData(container,
                                                               container->data(),
                                                               stride*newHeight,

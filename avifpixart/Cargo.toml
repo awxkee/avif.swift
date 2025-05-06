@@ -1,0 +1,26 @@
+[package]
+name = "avifpixart"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+bytemuck = {version = "1.23.0", features = ["nightly_float"]}
+pic-scale = "0.6.1"
+yuv = { path = "../../../RustroverProjects/yuvutils-rs", features = ["nightly_f16", "ycgco_r_type"] }
+
+[features]
+rdm = ["yuv/rdm", "pic-scale/rdm"]
+
+[lib]
+crate-type = ["staticlib"]
+
+[profile.release]
+panic = "unwind"
+strip = true  # Automatically strip symbols from the binary.
+opt-level = 3  # Optimize for size.
+lto = true  # Enable link time optimization
+codegen-units = 1  # Reduce parallel code generation units
+
+[build-dependencies]
+cbindgen = "0.28.0"

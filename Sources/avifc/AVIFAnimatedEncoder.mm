@@ -26,6 +26,14 @@
 #import <Foundation/Foundation.h>
 #import "AVIFAnimatedEncoder.h"
 #import "avif/avif.h"
+#include <vector>
+#include <memory>
+#import "avifpixart.h"
+#import "ColorSpace.h"
+
+static void releaseSharedAEncoderImage(avifImage* image) {
+    avifImageDestroy(image);
+}
 
 @implementation AVIFAnimatedEncoder {
     avifEncoder * encoder;
@@ -63,60 +71,70 @@
 
 - (void* _Nullable)addImage:(Image * _Nonnull)platformImage duration:(NSUInteger)duration error:(NSError * _Nullable * _Nullable)error {
     if (!encoder) {
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder is not allocation" }];
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder aws not allocated" }];
         return nil;
     }
-    int width;
-    int height;
-    unsigned char * rgba = [platformImage rgbaPixels:&width imageHeight:&height];
-    if (!rgba) {
+    uint32_t width;
+    uint32_t height;
+    auto sourceImage = [platformImage rgbaPixels:&width imageHeight:&height];
+    if (!sourceImage) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
                                             code:500
                                         userInfo:@{ NSLocalizedDescriptionKey: @"Fetching image pixels has failed" }];
         return nil;
     }
-    avifRGBImage rgb;
-    avifImage * image = avifImageCreate(width, height, 8, AVIF_PIXEL_FORMAT_YUV420);
-    if (!image) {
-        free(rgba);
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
-        return nil;
-    }
-    avifRGBImageSetDefaults(&rgb, image);
-    avifResult convertResult = avifRGBImageAllocatePixels(&rgb);
-    if (convertResult != AVIF_RESULT_OK) {
-        avifImageDestroy(image);
-        [self cleanUp];
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 
-                                        userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"allocating RGB planes has failed: %s", avifResultToString(convertResult)] }];
-        return nil;
-    }
-    rgb.depth = 8;
-    rgb.alphaPremultiplied = false;
-    memcpy(rgb.pixels, rgba, rgb.rowBytes * image->height);
     
-    free(rgba);
-    
-    convertResult = avifImageRGBToYUV(image, &rgb);
-    if (convertResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
-        avifImageDestroy(image);
-        [self cleanUp];
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"convert to YUV failed with result: %s", avifResultToString(convertResult)] }];
+    auto img = avifImageCreate(width, height, (uint32_t)8, AVIF_PIXEL_FORMAT_YUV420);
+
+    if (!img) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                            code:500
+                                        userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
         return nil;
     }
     
-    avifResult addImageResult = avifEncoderAddImage(encoder, image, (int)round(1000.0f * (float)duration), AVIF_ADD_IMAGE_FLAG_NONE);
+    std::shared_ptr<avifImage> image(img, releaseSharedAEncoderImage);
+    
+    if (sourceImage.sourceHasAlpha) {
+        if (avifImageAllocatePlanes(image.get(), AVIF_PLANES_ALL) != AVIF_RESULT_OK) {
+            *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
+            return nil;
+        }
+    } else {
+        if (avifImageAllocatePlanes(image.get(), AVIF_PLANES_YUV) != AVIF_RESULT_OK) {
+            *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
+            return nil;
+        }
+    }
+    
+    [ColorSpace apply:image.get() colorSpace: [sourceImage colorSpace]];
+        
+    YuvMatrix matrix = YuvMatrix::Bt709;
+    
+    if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT2020_NCL) {
+        matrix = YuvMatrix::Bt2020;
+    }
+    
+    pixart_rgba8_to_yuv8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                         image->yuvPlanes[1], image->yuvRowBytes[1],
+                         image->yuvPlanes[2], image->yuvRowBytes[2],
+                         [sourceImage data], width * 4,
+                         width, height,
+                         YuvRange::Tv, YuvMatrix::YCgCo, YuvType::Yuv420);
+    
+    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_YCGCO;
+    image->yuvRange = AVIF_RANGE_LIMITED;
+    
+    avifResult addImageResult = avifEncoderAddImage(encoder, image.get(), (int)round(1000.0f * (float)duration), AVIF_ADD_IMAGE_FLAG_NONE);
     if (addImageResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
-        avifImageDestroy(image);
         [self cleanUp];
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"add image failed with result: %s", avifResultToString(addImageResult)] }];
         return nil;
     }
-    
-    avifRGBImageFreePixels(&rgb);
-    avifImageDestroy(image);
     
     return (__bridge void * _Nullable)(self);
 }
@@ -136,6 +154,10 @@
 }
 
 - (NSData* _Nullable)encode:(NSError * _Nullable *_Nullable)error {
+    if (!encoder) {
+        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Encoder aws not allocated" }];
+        return nil;
+    }
     avifRWData avifOutput = AVIF_DATA_EMPTY;
     avifResult finishResult = avifEncoderFinish(encoder, &avifOutput);
     if (finishResult != AVIF_RESULT_OK) {

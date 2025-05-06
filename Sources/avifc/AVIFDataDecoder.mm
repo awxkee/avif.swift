@@ -13,10 +13,8 @@
 #endif
 #import <Accelerate/Accelerate.h>
 #import "AVIFDataDecoder.h"
-#import "AVIFRGBAMultiplier.h"
 #import <vector>
 #import "AVIFImageXForm.h"
-#import "HDRColorTransfer.h"
 #import <thread>
 
 @implementation AVIFDataDecoder {
@@ -46,18 +44,20 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 
     }
 
-    avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t *>(data.bytes), data.length);
-    avifResult decodeResult = avifDecoderParse(_idec);
-
+    avifResult decodeResult = avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t *>(data.bytes), data.length);
+    
     if (decodeResult != AVIF_RESULT_OK && decodeResult != AVIF_RESULT_TRUNCATED_DATA) {
-        NSLog(@"Failed to decode image: %s", avifResultToString(decodeResult));
         avifDecoderDestroy(_idec);
         _idec = NULL;
         return nil;
     }
+    
+    decodeResult = avifDecoderParse(_idec);
 
-    if (!_idec->allowProgressive) {
-        NSLog(@"Progressive decoding is not allowed");
+    if (decodeResult != AVIF_RESULT_OK && decodeResult != AVIF_RESULT_TRUNCATED_DATA) {
+        avifDecoderDestroy(_idec);
+        _idec = NULL;
+        return nil;
     }
 
     // Static image
@@ -65,7 +65,6 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         avifResult nextImageResult = avifDecoderNextImage(_idec);
 
         if (nextImageResult != AVIF_RESULT_OK) {
-            NSLog(@"avifImageYUVToRGB %s", avifResultToString(nextImageResult));
             avifDecoderDestroy(_idec);
             _idec = NULL;
             return nil;
@@ -80,7 +79,6 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 
         return image;
     } else if (_idec->imageCount < 1) {
-        NSLog(@"AVIF Data decoder: image is not already allocated... continue decoding...");
         return nil;
     }
     return nil;
@@ -145,7 +143,10 @@ void sharedDecoderDeallocator(avifDecoder* d) {
 #endif
 }
 
-- (nullable Image *)decode:(nonnull NSInputStream *)inputStream sampleSize:(CGSize)sampleSize maxContentSize:(NSUInteger)maxContentSize scale:(CGFloat)scale error:(NSError *_Nullable * _Nullable)error {
+- (nullable Image *)decode:(nonnull NSInputStream *)inputStream
+                sampleSize:(CGSize)sampleSize
+            maxContentSize:(NSUInteger)maxContentSize scale:(CGFloat)scale
+                     error:(NSError *_Nullable * _Nullable)error {
     try {
         if (scale < 1) {
             *error = [[NSError alloc] initWithDomain:@"AVIF"
@@ -230,8 +231,8 @@ void sharedDecoderDeallocator(avifDecoder* d) {
                 resizeFactor = sampleSize.height / (float)decoder->image->width;
             }
 
-            if (!avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor,
-                                (float)decoder->image->height*resizeFactor, &decoder->diag)) {
+            if (avifImageScale(decoder->image, (float)decoder->image->width*resizeFactor,
+                               (float)decoder->image->height*resizeFactor, &decoder->diag) != AVIF_RESULT_OK) {
                 return nil;
             }
         }

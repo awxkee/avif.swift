@@ -146,21 +146,44 @@ avifBool avifROStreamReadU64(avifROStream * stream, uint64_t * v)
     return AVIF_TRUE;
 }
 
-// Override of avifROStreamReadBits() for convenient uint8_t output.
-avifBool avifROStreamReadBits8(avifROStream * stream, uint8_t * v, size_t bitCount)
+avifBool avifROStreamSkipBits(avifROStream * stream, size_t bitCount)
 {
-    assert(bitCount <= sizeof(*v) * 8);
-    uint32_t v32;
-    if (!avifROStreamReadBits(stream, &v32, bitCount)) {
-        return AVIF_FALSE;
+    if (stream->numUsedBitsInPartialByte != 0) {
+        assert(stream->numUsedBitsInPartialByte < 8);
+        const size_t padding = AVIF_MIN(8 - stream->numUsedBitsInPartialByte, bitCount);
+        stream->numUsedBitsInPartialByte = (stream->numUsedBitsInPartialByte + padding) % 8;
+        bitCount -= padding;
+        if (bitCount == 0) {
+            return AVIF_TRUE;
+        }
     }
-    *v = (uint8_t)v32;
+    const size_t num_bytes = (bitCount + 7) / 8;
+    AVIF_CHECK(avifROStreamSkip(stream, num_bytes));
+    stream->numUsedBitsInPartialByte = bitCount % 8;
     return AVIF_TRUE;
 }
 
-avifBool avifROStreamReadBits(avifROStream * stream, uint32_t * v, size_t bitCount)
+avifBool avifROStreamReadBitsU8(avifROStream * stream, uint8_t * v, size_t bitCount)
 {
-    assert(bitCount <= sizeof(*v) * 8);
+    AVIF_CHECK(bitCount <= sizeof(*v) * 8);
+    uint32_t vU32;
+    AVIF_CHECK(avifROStreamReadBitsU32(stream, &vU32, bitCount));
+    *v = (uint8_t)vU32;
+    return AVIF_TRUE;
+}
+
+avifBool avifROStreamReadBitsU16(avifROStream * stream, uint16_t * v, size_t bitCount)
+{
+    AVIF_CHECK(bitCount <= sizeof(*v) * 8);
+    uint32_t vU32;
+    AVIF_CHECK(avifROStreamReadBitsU32(stream, &vU32, bitCount));
+    *v = (uint16_t)vU32;
+    return AVIF_TRUE;
+}
+
+avifBool avifROStreamReadBitsU32(avifROStream * stream, uint32_t * v, size_t bitCount)
+{
+    AVIF_CHECK(bitCount <= sizeof(*v) * 8);
     *v = 0;
     while (bitCount) {
         if (stream->numUsedBitsInPartialByte == 0) {
@@ -176,36 +199,13 @@ avifBool avifROStreamReadBits(avifROStream * stream, uint32_t * v, size_t bitCou
         // This way, packed bits can be found in the same order in the bit stream.
         const uint32_t bits = (*packedBits >> (8 - stream->numUsedBitsInPartialByte)) & ((1 << numBits) - 1);
         // The value bits are ordered from the most significant bit to the least significant bit.
-        // In the case where avifROStreamReadBits() is used to parse the unsigned integer value *v
+        // In the case where avifROStreamReadBitsU32() is used to parse the unsigned integer value *v
         // over multiple aligned bytes, this order corresponds to big endianness.
         *v |= bits << bitCount;
 
         if (stream->numUsedBitsInPartialByte == 8) {
             // Start a new partial byte the next time a bit is needed.
             stream->numUsedBitsInPartialByte = 0;
-        }
-    }
-    return AVIF_TRUE;
-}
-
-static const int VARINT_DEPTH_0 = 7; // +1 bit to stop or continue.
-static const int VARINT_DEPTH_1 = 3; // +1 bit to stop or continue.
-static const int VARINT_DEPTH_2 = 18;
-
-avifBool avifROStreamReadVarInt(avifROStream * stream, uint32_t * v)
-{
-    AVIF_CHECK(avifROStreamReadBits(stream, v, VARINT_DEPTH_0));
-    uint32_t extended, extension;
-
-    AVIF_CHECK(avifROStreamReadBits(stream, &extended, 1));
-    if (extended) {
-        AVIF_CHECK(avifROStreamReadBits(stream, &extension, VARINT_DEPTH_1));
-        *v += (extension + 1) << VARINT_DEPTH_0;
-
-        AVIF_CHECK(avifROStreamReadBits(stream, &extended, 1));
-        if (extended) {
-            AVIF_CHECK(avifROStreamReadBits(stream, &extension, VARINT_DEPTH_2));
-            *v += (extension + 1) << (VARINT_DEPTH_0 + VARINT_DEPTH_1);
         }
     }
     return AVIF_TRUE;
@@ -245,35 +245,58 @@ avifBool avifROStreamReadString(avifROStream * stream, char * output, size_t out
     return AVIF_TRUE;
 }
 
-avifBool avifROStreamReadBoxHeaderPartial(avifROStream * stream, avifBoxHeader * header)
+avifBool avifROStreamReadBoxHeaderPartial(avifROStream * stream, avifBoxHeader * header, avifBool topLevel)
 {
+    // Section 4.2.2 of ISO/IEC 14496-12.
     size_t startOffset = stream->offset;
 
     uint32_t smallSize;
-    AVIF_CHECK(avifROStreamReadU32(stream, &smallSize));
-    AVIF_CHECK(avifROStreamRead(stream, header->type, 4));
+    AVIF_CHECK(avifROStreamReadU32(stream, &smallSize));   // unsigned int(32) size;
+    AVIF_CHECK(avifROStreamRead(stream, header->type, 4)); // unsigned int(32) type = boxtype;
 
     uint64_t size = smallSize;
     if (size == 1) {
-        AVIF_CHECK(avifROStreamReadU64(stream, &size));
+        AVIF_CHECK(avifROStreamReadU64(stream, &size)); // unsigned int(64) largesize;
     }
 
     if (!memcmp(header->type, "uuid", 4)) {
-        AVIF_CHECK(avifROStreamSkip(stream, 16));
+        AVIF_CHECK(avifROStreamRead(stream, header->usertype, 16)); // unsigned int(8) usertype[16] = extended_type;
+    } else {
+        memset(header->usertype, 0, sizeof(header->usertype));
     }
 
     size_t bytesRead = stream->offset - startOffset;
+    if (size == 0) {
+        // Section 4.2.2 of ISO/IEC 14496-12.
+        //   if size is 0, then this box shall be in a top-level box (i.e. not contained in another
+        //   box), and be the last box in its 'file', and its payload extends to the end of that
+        //   enclosing 'file'. This is normally only used for a MediaDataBox ('mdat').
+        if (!topLevel) {
+            avifDiagnosticsPrintf(stream->diag, "%s: Non-top-level box with size 0", stream->diagContext);
+            return AVIF_FALSE;
+        }
+
+        // The given stream may be incomplete and there is no guarantee that sizeHint is available and accurate.
+        // Otherwise size could be set to avifROStreamRemainingBytes(stream) + (stream->offset - startOffset) right now.
+
+        // Wait for avifIOReadFunc() to return AVIF_RESULT_OK.
+        header->isSizeZeroBox = AVIF_TRUE;
+        header->size = 0;
+        return AVIF_TRUE;
+    }
+
     if ((size < bytesRead) || ((size - bytesRead) > SIZE_MAX)) {
         avifDiagnosticsPrintf(stream->diag, "%s: Header size overflow check failure", stream->diagContext);
         return AVIF_FALSE;
     }
+    header->isSizeZeroBox = AVIF_FALSE;
     header->size = (size_t)(size - bytesRead);
     return AVIF_TRUE;
 }
 
 avifBool avifROStreamReadBoxHeader(avifROStream * stream, avifBoxHeader * header)
 {
-    AVIF_CHECK(avifROStreamReadBoxHeaderPartial(stream, header));
+    AVIF_CHECK(avifROStreamReadBoxHeaderPartial(stream, header, /*topLevel=*/AVIF_FALSE));
     if (header->size > avifROStreamRemainingBytes(stream)) {
         avifDiagnosticsPrintf(stream->diag, "%s: Child box too large, possibly truncated data", stream->diagContext);
         return AVIF_FALSE;
@@ -294,10 +317,10 @@ avifBool avifROStreamReadVersionAndFlags(avifROStream * stream, uint8_t * versio
     return AVIF_TRUE;
 }
 
-avifBool avifROStreamReadAndEnforceVersion(avifROStream * stream, uint8_t enforcedVersion)
+avifBool avifROStreamReadAndEnforceVersion(avifROStream * stream, uint8_t enforcedVersion, uint32_t * flags)
 {
     uint8_t version;
-    AVIF_CHECK(avifROStreamReadVersionAndFlags(stream, &version, NULL));
+    AVIF_CHECK(avifROStreamReadVersionAndFlags(stream, &version, flags));
     if (version != enforcedVersion) {
         avifDiagnosticsPrintf(stream->diag, "%s: Expecting box version %u, got version %u", stream->diagContext, enforcedVersion, version);
         return AVIF_FALSE;
@@ -458,7 +481,7 @@ avifResult avifRWStreamWriteZeros(avifRWStream * stream, size_t byteCount)
 
 avifResult avifRWStreamWriteBits(avifRWStream * stream, uint32_t v, size_t bitCount)
 {
-    assert(((uint64_t)v >> bitCount) == 0); // (uint32_t >> 32 is undefined behavior)
+    AVIF_CHECKERR(bitCount >= 32 || (v >> bitCount) == 0, AVIF_RESULT_INVALID_ARGUMENT);
     while (bitCount) {
         if (stream->numUsedBitsInPartialByte == 0) {
             AVIF_CHECKRES(makeRoom(stream, 1)); // Book a new partial byte in the stream.
@@ -482,28 +505,6 @@ avifResult avifRWStreamWriteBits(avifRWStream * stream, uint32_t v, size_t bitCo
         if (stream->numUsedBitsInPartialByte == 8) {
             // Start a new partial byte the next time a bit is needed.
             stream->numUsedBitsInPartialByte = 0;
-        }
-    }
-    return AVIF_RESULT_OK;
-}
-
-avifResult avifRWStreamWriteVarInt(avifRWStream * stream, uint32_t v)
-{
-    AVIF_CHECKERR(v < (1u << (VARINT_DEPTH_0 + VARINT_DEPTH_1 + VARINT_DEPTH_2)) + (1u << (VARINT_DEPTH_0 + VARINT_DEPTH_1)) +
-                          (1u << VARINT_DEPTH_0),
-                  AVIF_RESULT_INVALID_ARGUMENT);
-
-    AVIF_CHECKRES(avifRWStreamWriteBits(stream, v & ((1u << VARINT_DEPTH_0) - 1), VARINT_DEPTH_0)); // value
-    v >>= VARINT_DEPTH_0;
-    AVIF_CHECKRES(avifRWStreamWriteBits(stream, v > 0, 1)); // extended
-    if (v > 0) {
-        v -= 1;
-        AVIF_CHECKRES(avifRWStreamWriteBits(stream, v & ((1u << VARINT_DEPTH_1) - 1), VARINT_DEPTH_1)); // extension
-        v >>= VARINT_DEPTH_1;
-        AVIF_CHECKRES(avifRWStreamWriteBits(stream, v > 0, 1)); // extended
-        if (v > 0) {
-            v -= 1;
-            AVIF_CHECKRES(avifRWStreamWriteBits(stream, v, VARINT_DEPTH_2)); // extension
         }
     }
     return AVIF_RESULT_OK;

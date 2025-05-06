@@ -26,7 +26,6 @@
 #import "AVIFAnimatedDecoder.h"
 #import "avif/avif.h"
 #import <Accelerate/Accelerate.h>
-#import "AVIFRGBAMultiplier.h"
 #import "PlatformImage.h"
 #import "AVIFImageXForm.h"
 #import <thread>
@@ -37,8 +36,16 @@
 
 -(nullable id)initWithData:(nonnull NSData*)data {
     _idec = avifDecoderCreate();
+    if (_idec == nullptr) {
+        return nil;
+    }
 
-    avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t*>(data.bytes), data.length);
+    auto result = avifDecoderSetIOMemory(_idec, reinterpret_cast<const uint8_t*>(data.bytes), data.length);
+    if (result != AVIF_RESULT_OK) {
+        avifDecoderDestroy(_idec);
+        _idec = nullptr;
+        return nil;
+    }
     CGFloat scale = 1;
     
     _idec->strictFlags = AVIF_STRICT_DISABLED;
@@ -77,7 +84,10 @@
 
 -(int)frameDuration:(int)frame {
     avifImageTiming timing;
-    avifDecoderNthImageTiming(_idec, frame, &timing);
+    auto result = avifDecoderNthImageTiming(_idec, frame, &timing);
+    if (result != AVIF_RESULT_OK) {
+        return 1;
+    }
     return (int)(1000.0f / ((float)timing.timescale) * (float)timing.durationInTimescales);
 }
 
