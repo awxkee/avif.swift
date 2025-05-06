@@ -1,0 +1,4 @@
+module AvifPixart {
+    header "avifpixart.h"
+    export *
+}

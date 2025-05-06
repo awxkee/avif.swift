@@ -35,6 +35,8 @@
 #include <vector>
 #include <sys/types.h>
 #include <sys/sysctl.h>
+#import "ColorSpace.h"
+#import "avifpixart.h"
 
 static void releaseSharedEncoder(avifEncoder* encoder) {
     avifEncoderDestroy(encoder);
@@ -56,18 +58,19 @@ static void releaseSharedPixels(unsigned char * pixels) {
                          quality:(double)quality 
                   preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error {
-    int width;
-    int height;
-    unsigned char * rgbPixels = [platformImage rgbaPixels:&width imageHeight:&height];
-    if (!rgbPixels) {
+    uint32_t width;
+    uint32_t height;
+    
+    auto sourceImage = [platformImage rgbaPixels:&width imageHeight:&height];
+    if (!sourceImage) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
                                             code:500
                                         userInfo:@{ NSLocalizedDescriptionKey: @"Fetching image pixels has failed" }];
         return nil;
     }
-    std::shared_ptr<unsigned char> rgba(rgbPixels, releaseSharedPixels);
-    avifRGBImage rgb;
+ 
     auto img = avifImageCreate(width, height, (uint32_t)8, AVIF_PIXEL_FORMAT_YUV420);
+
     if (!img) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
                                             code:500
@@ -90,43 +93,70 @@ static void releaseSharedPixels(unsigned char * pixels) {
             }
             break;
     }
+    
+    if (sourceImage.sourceHasAlpha) {
+        if (avifImageAllocatePlanes(image.get(), AVIF_PLANES_ALL) != AVIF_RESULT_OK) {
+            *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
+            return nil;
+        }
+    } else {
+        if (avifImageAllocatePlanes(image.get(), AVIF_PLANES_YUV) != AVIF_RESULT_OK) {
+            *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
+                                                code:500
+                                            userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for image has failed" }];
+            return nil;
+        }
+    }
+    
+    [ColorSpace apply:image.get() colorSpace: [sourceImage colorSpace]];
+        
+    YuvMatrix matrix = YuvMatrix::Bt709;
+    
+    if (image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_BT2020_NCL) {
+        matrix = YuvMatrix::Bt2020;
+    }
+    
+    pixart_rgba8_to_yuv8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                         image->yuvPlanes[1], image->yuvRowBytes[1],
+                         image->yuvPlanes[2], image->yuvRowBytes[2],
+                         [sourceImage data], width * 4,
+                         width, height,
+                         YuvRange::Tv, matrix, YuvType::Yuv420);
 
-    avifRGBImageSetDefaults(&rgb, image.get());
-    avifResult convertResult = avifRGBImageAllocatePixels(&rgb);
-    if (convertResult != AVIF_RESULT_OK) {
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"AVIF initialization failed: %s", avifResultToString(convertResult)] }];
-        return nil;
+    if (sourceImage.sourceHasAlpha && image->alphaPlane) {
+        if (image->depth > 8) {
+            uint32_t expand = image->depth - 8;
+            uint32_t rem = 8 - expand;
+            for (uint32_t y = 0; y < height; ++y) {
+                auto srcPtr = sourceImage.data + y * width * 4;
+                auto dstPtr = reinterpret_cast<uint16_t*>(image->alphaPlane + image->alphaRowBytes * y);
+                for (uint32_t x = 0; x < width; ++x) {
+                    uint32_t oldAlpha = static_cast<uint32_t>(srcPtr[3]);
+                    uint32_t newAlpha = (oldAlpha << expand) | (oldAlpha >> rem);
+                    *dstPtr = newAlpha;
+                    dstPtr += 1;
+                    srcPtr += 4;
+                }
+            }
+        } else {
+            for (uint32_t y = 0; y < height; ++y) {
+                auto srcPtr = sourceImage.data + y * width * 4;
+                auto dstPtr = image->alphaPlane + image->alphaRowBytes * y;
+                for (uint32_t x = 0; x < width; ++x) {
+                    *dstPtr = srcPtr[3];
+                    dstPtr += 1;
+                    srcPtr += 4;
+                }
+            }
+        }
     }
-    rgb.alphaPremultiplied = false;
-    memcpy(rgb.pixels, rgba.get(), rgb.rowBytes * image->height);
-    
-    //    if (!image->icc.size && (image->colorPrimaries == AVIF_COLOR_PRIMARIES_UNSPECIFIED) &&
-    //        (image->transferCharacteristics == AVIF_TRANSFER_CHARACTERISTICS_UNSPECIFIED)) {
-    //        // The final image has no ICC profile, the user didn't specify any CICP, and the source
-    //        // image didn't provide any CICP. Explicitly signal SRGB CP/TC here, as 2/2/x will be
-    //        // interpreted as SRGB anyway.
-    //        image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT709;
-    //        image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
-    //        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT709;
-    //    }
-    
-    //    image->colorPrimaries = AVIF_COLOR_PRIMARIES_BT2020;
-    //    image->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_HLG;
-    //    image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT2020_NCL;
-    
-    rgba.reset();
-    convertResult = avifImageRGBToYUV(image.get(), &rgb);
-    if (convertResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
-        *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"convert to YUV failed with result: %s", avifResultToString(convertResult)] }];
-        return nil;
-    }
-    
+        
     std::time_t currentTime = std::time(nullptr);
     std::tm* timeInfo = std::localtime(&currentTime);
     
-    // Format the date and time
-    char formattedTime[20]; // Buffer for the formatted time
+    char formattedTime[66];
     std::strftime(formattedTime, sizeof(formattedTime), "%Y:%m:%d %H:%M:%S", timeInfo);
     std::string dateTime(formattedTime);
     
@@ -155,14 +185,12 @@ static void releaseSharedPixels(unsigned char * pixels) {
     
     auto exifResult = avifImageSetMetadataXMP(image.get(), reinterpret_cast<const uint8_t*>(xmpMetadata.data()), xmpMetadata.size());
     if (exifResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"Add EXIF failed with result: %s", avifResultToString(exifResult)] }];
         return nil;
     }
     
     auto enc = avifEncoderCreate();
     if (!enc) {
-        avifRGBImageFreePixels(&rgb);
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
                                             code:500
                                         userInfo:@{ NSLocalizedDescriptionKey: @"Memory allocation for encoder has failed" }];
@@ -177,7 +205,6 @@ static void releaseSharedPixels(unsigned char * pixels) {
     }
     avifResult addImageResult = avifEncoderAddImage(encoder.get(), image.get(), 1, AVIF_ADD_IMAGE_FLAG_SINGLE);
     if (addImageResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
         encoder.reset();
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"add image failed with result: %s", avifResultToString(addImageResult)] }];
         return nil;
@@ -186,7 +213,6 @@ static void releaseSharedPixels(unsigned char * pixels) {
     avifRWData avifOutput = AVIF_DATA_EMPTY;
     avifResult finishResult = avifEncoderFinish(encoder.get(), &avifOutput);
     if (finishResult != AVIF_RESULT_OK) {
-        avifRGBImageFreePixels(&rgb);
         encoder.reset();
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder" code:500 userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat: @"encoding failed with result: %s", avifResultToString(addImageResult)] }];
         return nil;
@@ -195,7 +221,6 @@ static void releaseSharedPixels(unsigned char * pixels) {
     NSData *result = [[NSData alloc] initWithBytes:avifOutput.data length:avifOutput.size];
     
     avifRWDataFree(&avifOutput);
-    avifRGBImageFreePixels(&rgb);
     encoder.reset();
     
     return result;

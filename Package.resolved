@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libaom.swift.git",
       "state" : {
-        "revision" : "506308364f5f83e3ae2797521d9b3958205ec0e8",
-        "version" : "1.0.4"
+        "revision" : "17ed302a68f6dc31e34ecf2a5b426ba8a667deac",
+        "version" : "1.1.0"
       }
     },
     {
@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libdav1d.swift.git",
       "state" : {
-        "revision" : "b4c002ba08f35806b7bfc3c0f65c626e3308e6c8",
-        "version" : "1.1.0"
+        "revision" : "56f7037e7af7646f1d02bdcd16f5032e9d66e4d1",
+        "version" : "1.2.0"
       }
     },
     {
@@ -23,8 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libsvtav1enc.swift",
       "state" : {
-        "revision" : "fff1840be980fb2a9b7b3a0245499db95ff753df",
-        "version" : "1.0.3"
+        "revision" : "551a675778aa0dda6d23653ef3d0fc37a8d33c08",
+        "version" : "1.1.0"
       }
     },
     {
@@ -32,8 +32,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libwebp-ios.git",
       "state" : {
-        "revision" : "09ab26afc64c55a49332c396c4b465c278fcb05f",
-        "version" : "1.1.1"
+        "revision" : "46b42251e665d520a4d842d48e8d5bcac9399942",
+        "version" : "1.2.0"
       }
     },
     {
@@ -41,8 +41,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/awxkee/libyuv.swift.git",
       "state" : {
-        "revision" : "6ccc8fc35d5f6e5b419c0792f0b1de8e5a448e45",
-        "version" : "1.0.1"
+        "revision" : "810842f196c65b77a39c2f32080225166b0e8f87",
+        "version" : "1.1.0"
       }
     },
     {

@@ -25,8 +25,106 @@
 
 #import <Foundation/Foundation.h>
 #import "PlatformImage.h"
-#import "AVIFRGBAMultiplier.h"
 #import <Accelerate/Accelerate.h>
+
+@implementation EnclosedImage {
+    std::vector<uint8_t> mData;
+    EnclosedColorSpace mColorSpace;
+    bool mSourceHasAlpha;
+}
+
+- (instancetype)init
+{
+    self = [super init];
+    mColorSpace = EnclosedColorSpace::kSRGB;
+    return self;
+}
+
+- (uint8_t *)data {
+    return mData.data();
+}
+
+- (void)setLimits:(uint32_t)size {
+    mData.resize(size);
+}
+
+-(void)setSourceAlpha:(bool)value {
+    mSourceHasAlpha = value;
+}
+
+- (EnclosedColorSpace)colorSpace {
+    return mColorSpace;
+}
+
+- (bool)sourceHasAlpha {
+    return mSourceHasAlpha;
+}
+
+-(CGColorSpaceRef)recognizeColorSpace:(CGImageRef)imageRef {
+    auto sourceRef = CGImageGetColorSpace(imageRef);
+    NSString *colorSpaceName = (__bridge NSString *)CGColorSpaceCopyName(sourceRef);
+    if (colorSpaceName == nullptr) {
+        return CGColorSpaceCreateDeviceRGB();
+    }
+    
+    if (@available(iOS 14.0, *)) {
+        if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_2100_HLG, 0) == kCFCompareEqualTo) {
+            mColorSpace = EnclosedColorSpace::kBt2020HLG;
+            return CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_HLG);
+        }
+    }
+    if (@available(iOS 14.0, *)) {
+        if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_2100_PQ, 0) == kCFCompareEqualTo) {
+            mColorSpace = EnclosedColorSpace::kBt2020PQ;
+            return CGColorSpaceCreateWithName(kCGColorSpaceITUR_2100_PQ);
+        }
+    }
+    
+    if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_2020, 0) == kCFCompareEqualTo) {
+        mColorSpace = EnclosedColorSpace::kBt2020;
+        return CGColorSpaceCreateWithName(kCGColorSpaceITUR_2020);
+    }
+    
+    if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceDisplayP3, 0) == kCFCompareEqualTo) {
+        mColorSpace = EnclosedColorSpace::kDisplayP3;
+        return CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3);
+    }
+    
+    if (@available(iOS 13.4, *)) {
+        if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceDisplayP3_PQ, 0) == kCFCompareEqualTo) {
+            mColorSpace = EnclosedColorSpace::kDisplayP3PQ;
+            return CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3_PQ);
+        }
+    }
+    
+    if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceDisplayP3_HLG, 0) == kCFCompareEqualTo) {
+        mColorSpace = EnclosedColorSpace::kDisplayP3HLG;
+        return CGColorSpaceCreateWithName(kCGColorSpaceDisplayP3_HLG);
+    }
+    
+    if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_709, 0) == kCFCompareEqualTo) {
+        mColorSpace = EnclosedColorSpace::kBt709;
+        return CGColorSpaceCreateWithName(kCGColorSpaceITUR_709);
+    }
+    
+    if (@available(iOS 15.1, *)) {
+        if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_709_PQ, 0) == kCFCompareEqualTo) {
+            mColorSpace = EnclosedColorSpace::kBt709PQ;
+            return CGColorSpaceCreateWithName(kCGColorSpaceITUR_709_PQ);
+        }
+    }
+    
+    if (@available(iOS 15.1, *)) {
+        if (CFStringCompare((__bridge CFStringRef)colorSpaceName, kCGColorSpaceITUR_709_HLG, 0) == kCFCompareEqualTo) {
+            mColorSpace = EnclosedColorSpace::kBt709HLG;
+            return CGColorSpaceCreateWithName(kCGColorSpaceITUR_709_HLG);
+        }
+    }
+    
+    return CGColorSpaceCreateDeviceRGB();
+}
+
+@end
 
 @implementation Image (ColorData)
 
@@ -58,21 +156,33 @@
     return imageRef;
 }
 
--(nullable uint8_t *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
+-(nullable EnclosedImage*)rgbaPixels:(nonnull uint32_t*)imageWidth imageHeight:(nonnull uint32_t*)imageHeight {
     CGImageRef imageRef = [self makeCGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
     width = width % 2 == 0 ? width : width + 1;
     height = height % 2 == 0 ? height : height + 1;
-    *imageWidth = static_cast<int>(width);
-    *imageHeight = static_cast<int>(height);
-    int stride = (int)4 * (int)width * sizeof(uint8_t);
-    uint8_t *targetMemory = reinterpret_cast<uint8_t*>(malloc((int)(stride * height)));
+    *imageWidth = static_cast<uint32_t>(width);
+    *imageHeight = static_cast<uint32_t>(height);
+    
+    auto alphaInfo = CGImageGetAlphaInfo(imageRef);
+    bool isRGBA = (alphaInfo == kCGImageAlphaPremultipliedLast ||
+                   alphaInfo == kCGImageAlphaLast ||
+                   alphaInfo == kCGImageAlphaPremultipliedFirst ||
+                   alphaInfo == kCGImageAlphaFirst);
+    
+    uint32_t stride = (int)4 * (int)width * sizeof(uint8_t);
+    
+    auto img = [[EnclosedImage alloc] init];
+    
+    [img setLimits:static_cast<uint32_t>(stride) * static_cast<uint32_t>(height)];
+    [img setSourceAlpha:isRGBA];
 
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+    CGColorSpaceRef colorSpace = [img recognizeColorSpace:imageRef];
+    
     CGBitmapInfo bitmapInfo = (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrderDefault;
 
-    CGContextRef targetContext = CGBitmapContextCreate(targetMemory, width, height, 8, stride, colorSpace, bitmapInfo);
+    CGContextRef targetContext = CGBitmapContextCreate(img.data, width, height, 8, stride, colorSpace, bitmapInfo);
 
     [NSGraphicsContext saveGraphicsState];
     [NSGraphicsContext setCurrentContext: [NSGraphicsContext graphicsContextWithCGContext:targetContext flipped:FALSE]];
@@ -87,40 +197,52 @@
     CGContextRelease(targetContext);
     CGColorSpaceRelease(colorSpace);
 
-    if (![self avifUnpremultiplyRGBA:targetMemory width:width height:height]) {
-        free(targetMemory);
+    if (![self avifUnpremultiplyRGBA:img.data width:width height:height]) {
         return nil;
     }
 
-    return targetMemory;
+    return img;
 }
 #else
-- (unsigned char *)rgbaPixels:(nonnull int*)imageWidth imageHeight:(nonnull int*)imageHeight {
+-(nullable EnclosedImage*)rgbaPixels:(nonnull uint32_t*)imageWidth imageHeight:(nonnull uint32_t*)imageHeight {
     CGImageRef imageRef = [self CGImage];
     NSUInteger width = CGImageGetWidth(imageRef);
     NSUInteger height = CGImageGetHeight(imageRef);
     width = width % 2 == 0 ? width : width + 1;
     height = height % 2 == 0 ? height : height + 1;
-    *imageWidth = static_cast<int>(width);
-    *imageHeight = static_cast<int>(height);
-    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    unsigned char *rawData = (unsigned char*) malloc(height * width * 4 * sizeof(uint8_t));
+    *imageWidth = static_cast<uint32_t>(width);
+    *imageHeight = static_cast<uint32_t>(height);
+    
+    uint32_t stride = (int)4 * (int)width * sizeof(uint8_t);
+    
+    auto alphaInfo = CGImageGetAlphaInfo(imageRef);
+    bool isRGBA = (alphaInfo == kCGImageAlphaPremultipliedLast ||
+                   alphaInfo == kCGImageAlphaLast ||
+                   alphaInfo == kCGImageAlphaPremultipliedFirst ||
+                   alphaInfo == kCGImageAlphaFirst);
+
+    auto img = [[EnclosedImage alloc] init];
+    
+    [img setLimits:static_cast<uint32_t>(stride) * static_cast<uint32_t>(height)];
+    [img setSourceAlpha:isRGBA];
+
+    CGColorSpaceRef colorSpace = [img recognizeColorSpace:imageRef];
+    
     NSUInteger bytesPerPixel = 4;
     NSUInteger bytesPerRow = bytesPerPixel * width;
     NSUInteger bitsPerComponent = 8;
-    CGContextRef context = CGBitmapContextCreate(rawData, width, height,
+    CGContextRef context = CGBitmapContextCreate(img.data, width, height,
                                                  bitsPerComponent, bytesPerRow, colorSpace,
                                                  (int)kCGImageAlphaPremultipliedLast | (int)kCGBitmapByteOrderDefault);
     CGContextDrawImage(context, CGRectMake(0, 0, width, height), imageRef);
     CGContextRelease(context);
     CGColorSpaceRelease(colorSpace);
 
-    if (![self avifUnpremultiplyRGBA:rawData width:width height:height]) {
-        free(rawData);
+    if (![self avifUnpremultiplyRGBA:img.data width:width height:height]) {
         return nil;
     }
 
-    return rawData;
+    return img;
 }
 #endif
 @end
