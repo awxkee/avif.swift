@@ -14,7 +14,7 @@
 // https://chromium-review.googlesource.com/c/libyuv/libyuv/+/3527834
 #pragma clang diagnostic ignored "-Wnewline-eof" // "no newline at end of file"
 #endif
-#include <libyuv.h>
+
 #if defined(__clang__)
 #pragma clang diagnostic pop
 #endif
