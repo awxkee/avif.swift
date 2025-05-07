@@ -5,7 +5,6 @@
 //
 
 #import <Foundation/Foundation.h>
-#import "libyuv.h"
 #if __has_include(<libavif/avif.h>)
 #import <libavif/avif.h>
 #else
