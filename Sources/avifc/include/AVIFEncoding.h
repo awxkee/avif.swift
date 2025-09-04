@@ -31,6 +31,7 @@
 - (nullable NSData *)encodeImage:(nonnull Image *)platformImage
                            speed:(NSInteger)speed
                          quality:(double)quality
+                    highСontrast:(bool)highСontrast
                          preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error;
 

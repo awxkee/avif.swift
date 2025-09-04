@@ -32,7 +32,7 @@ import AppKit
 #endif
 
 public class AVIFEncoder {
-    public static func encode(image: PlatformImage, quality: Double = 1.0, speed: Int = -1, preferredCodec: PreferredCodec = .AOM) throws -> Data {
-        return try AVIFEncoding().encode(image, speed: speed, quality: quality, preferredCodec: preferredCodec)
+    public static func encode(image: PlatformImage, quality: Double = 1.0, speed: Int = -1, highСontrast: Bool = false, preferredCodec: PreferredCodec = .AOM) throws -> Data {
+        return try AVIFEncoding().encode(image, speed: speed, quality: quality, highСontrast: highСontrast, preferredCodec: preferredCodec)
     }
 }
