@@ -26,12 +26,19 @@
 #import "AVIFImageMacros.h"
 #import "PlatformImage.h"
 
+typedef NS_ENUM(NSUInteger, Yuv) {
+    kYuv420 NS_SWIFT_NAME(yuv420),
+    kYuv422 NS_SWIFT_NAME(yuv422),
+    kYuv444 NS_SWIFT_NAME(yuv444)
+};
+
 @interface AVIFEncoding : NSObject
 
 - (nullable NSData *)encodeImage:(nonnull Image *)platformImage
                            speed:(NSInteger)speed
                          quality:(double)quality
-                    highСontrast:(bool)highСontrast
+                             yuv:(Yuv)yuv
+                   avifRangeFill:(bool)avifRangeFill
                          preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error;
 

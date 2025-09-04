@@ -56,7 +56,8 @@ static void releaseSharedPixels(unsigned char * pixels) {
 - (nullable NSData *)encodeImage:(nonnull Image *)platformImage
                            speed:(NSInteger)speed
                          quality:(double)quality
-                    highСontrast:(bool)highСontrast
+                         yuv:(Yuv)yuv
+                   avifRangeFill:(bool)avifRangeFill
                   preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error {
     uint32_t width;
@@ -70,7 +71,24 @@ static void releaseSharedPixels(unsigned char * pixels) {
         return nil;
     }
  
-    auto img = avifImageCreate(width, height, (uint32_t)8, highСontrast ? AVIF_PIXEL_FORMAT_YUV422 : AVIF_PIXEL_FORMAT_YUV420);
+    avifPixelFormat avifPixelFormat;
+    YuvType yuvType;
+    switch (yuv) {
+    case kYuv420:
+        avifPixelFormat = AVIF_PIXEL_FORMAT_YUV420;
+        yuvType = YuvType::Yuv420;
+        break;
+    case kYuv422:
+        avifPixelFormat = AVIF_PIXEL_FORMAT_YUV422;
+        yuvType = YuvType::Yuv422;
+        break;
+    case kYuv444:
+        avifPixelFormat = AVIF_PIXEL_FORMAT_YUV444;
+        yuvType = YuvType::Yuv444;
+        break;
+    }
+    
+    auto img = avifImageCreate(width, height, (uint32_t)8, avifPixelFormat);
 
     if (!img) {
         *error = [[NSError alloc] initWithDomain:@"AVIFEncoder"
@@ -119,22 +137,18 @@ static void releaseSharedPixels(unsigned char * pixels) {
         matrix = YuvMatrix::Bt2020;
     }
     
-    if (highСontrast) {
+    YuvRange yuvRange = YuvRange::Tv;
+    if (avifRangeFill) {
         image->yuvRange = AVIF_RANGE_FULL;
-        pixart_rgba8_to_yuv8(image->yuvPlanes[0], image->yuvRowBytes[0],
-                             image->yuvPlanes[1], image->yuvRowBytes[1],
-                             image->yuvPlanes[2], image->yuvRowBytes[2],
-                             [sourceImage data], width * 4,
-                             width, height,
-                             YuvRange::Pc, matrix, YuvType::Yuv422);
-    } else {
-        pixart_rgba8_to_yuv8(image->yuvPlanes[0], image->yuvRowBytes[0],
-                             image->yuvPlanes[1], image->yuvRowBytes[1],
-                             image->yuvPlanes[2], image->yuvRowBytes[2],
-                             [sourceImage data], width * 4,
-                             width, height,
-                             YuvRange::Tv, matrix, YuvType::Yuv420);
+        yuvRange = YuvRange::Pc;
     }
+    
+    pixart_rgba8_to_yuv8(image->yuvPlanes[0], image->yuvRowBytes[0],
+                         image->yuvPlanes[1], image->yuvRowBytes[1],
+                         image->yuvPlanes[2], image->yuvRowBytes[2],
+                         [sourceImage data], width * 4,
+                         width, height,
+                         yuvRange, matrix, yuvType);
 
     if (sourceImage.sourceHasAlpha && image->alphaPlane) {
         if (image->depth > 8) {
