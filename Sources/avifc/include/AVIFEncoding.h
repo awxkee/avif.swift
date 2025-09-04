@@ -38,7 +38,7 @@ typedef NS_ENUM(NSUInteger, Yuv) {
                            speed:(NSInteger)speed
                          quality:(double)quality
                              yuv:(Yuv)yuv
-                   avifRangeFill:(bool)avifRangeFill
+                       rangeFull:(bool)rangeFull
                          preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error;
 

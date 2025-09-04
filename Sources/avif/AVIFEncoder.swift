@@ -33,18 +33,18 @@ import AppKit
 
 public class AVIFEncoder {
     public static func encode(image: PlatformImage, quality: Double = 1.0, speed: Int = -1, preferredCodec: PreferredCodec = .AOM) throws -> Data {
-        try AVIFEncoding().encode(image, speed: speed, quality: quality, yuv: .yuv420, avifRangeFill: false, preferredCodec: preferredCodec)
+        try AVIFEncoding().encode(image, speed: speed, quality: quality, yuv: .yuv420, rangeFull: false, preferredCodec: preferredCodec)
     }
     
-    public static func encode(image: PlatformImage, with param: EncodeParameter) throws -> Data {
-        try AVIFEncoding().encode(image, speed: param.speed, quality: param.quality, yuv: param.yuv, avifRangeFill: param.avifRangeFill, preferredCodec: param.preferredCodec)
+    public static func encode(image: PlatformImage, with param: EncodingOptions) throws -> Data {
+        try AVIFEncoding().encode(image, speed: param.speed, quality: param.quality, yuv: param.yuv, rangeFull: param.rangeFull, preferredCodec: param.preferredCodec)
     }
 }
 
-public struct EncodeParameter {
+public struct EncodingOptions {
     var quality: Double = 1.0
     var yuv: Yuv = .yuv420
-    var avifRangeFill: Bool
+    var rangeFull: Bool
     var speed: Int = -1
     var preferredCodec: PreferredCodec = .AOM
 }

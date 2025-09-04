@@ -57,7 +57,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
                            speed:(NSInteger)speed
                          quality:(double)quality
                          yuv:(Yuv)yuv
-                   avifRangeFill:(bool)avifRangeFill
+                       rangeFull:(bool)rangeFull
                   preferredCodec:(PreferredCodec)preferredCodec
                            error:(NSError * _Nullable *_Nullable)error {
     uint32_t width;
@@ -138,7 +138,7 @@ static void releaseSharedPixels(unsigned char * pixels) {
     }
     
     YuvRange yuvRange = YuvRange::Tv;
-    if (avifRangeFill) {
+    if (rangeFull) {
         image->yuvRange = AVIF_RANGE_FULL;
         yuvRange = YuvRange::Pc;
     }
