@@ -42,9 +42,17 @@ public class AVIFEncoder {
 }
 
 public struct EncodingOptions {
-    var quality: Double = 1.0
-    var yuv: Yuv = .yuv420
-    var rangeFull: Bool
-    var speed: Int = -1
-    var preferredCodec: PreferredCodec = .AOM
+    let quality: Double
+    let yuv: Yuv
+    let rangeFull: Bool
+    let speed: Int
+    let preferredCodec: PreferredCodec
+    
+    public init(quality: Double = 1.0, yuv: Yuv = .yuv420, rangeFull: Bool = false, speed: Int = -1, preferredCodec: PreferredCodec = .AOM) {
+        self.quality = quality
+        self.yuv = yuv
+        self.rangeFull = rangeFull
+        self.speed = speed
+        self.preferredCodec = preferredCodec
+    }
 }
