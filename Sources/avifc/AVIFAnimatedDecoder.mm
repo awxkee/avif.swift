@@ -70,6 +70,7 @@
 #else
     image = [UIImage imageWithCGImage:ref scale:1 orientation:UIImageOrientationUp];
 #endif
+    CGImageRelease(ref); // avoid leak
     return image;
 }
 
