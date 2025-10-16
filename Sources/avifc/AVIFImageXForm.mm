@@ -566,6 +566,7 @@ return AvifImageHandle {                            \
 #else
     image = [UIImage imageWithCGImage:imageRef scale:scale orientation:UIImageOrientationUp];
 #endif
+    CGImageRelease(imageRef);
     return image;
 }
 

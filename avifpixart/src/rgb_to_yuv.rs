@@ -212,9 +212,8 @@ pub(crate) fn work_on_transmuted_ptr_u16<F>(
 
     if allocated {
         let src_slice = working_slice.borrow();
-        let dst_slice = unsafe {
-            slice::from_raw_parts_mut(rgba as *mut u8, rgba_stride as usize * height)
-        };
+        let dst_slice =
+            unsafe { slice::from_raw_parts_mut(rgba as *mut u8, rgba_stride as usize * height) };
         for (src, dst) in src_slice
             .chunks_exact(dst_stride)
             .zip(dst_slice.chunks_exact_mut(rgba_stride as usize))
