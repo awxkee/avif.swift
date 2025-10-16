@@ -6,8 +6,8 @@ build = "build.rs"
 
 [dependencies]
 bytemuck = {version = "1.23.0", features = ["nightly_float"]}
-pic-scale = "0.6.1"
-yuv = { path = "../../../RustroverProjects/yuvutils-rs", features = ["nightly_f16", "ycgco_r_type"] }
+pic-scale = "0.6.12"
+yuv = { version = "0.8.8", features = ["nightly_f16", "ycgco_r_type"] }
 
 [features]
 rdm = ["yuv/rdm", "pic-scale/rdm"]
@@ -23,4 +23,4 @@ lto = true  # Enable link time optimization
 codegen-units = 1  # Reduce parallel code generation units
 
 [build-dependencies]
-cbindgen = "0.28.0"
+cbindgen = "0.29.0"
