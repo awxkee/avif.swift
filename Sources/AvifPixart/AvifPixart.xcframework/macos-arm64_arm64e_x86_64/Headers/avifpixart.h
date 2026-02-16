@@ -4,9 +4,9 @@
 #include <ostream>
 #include <new>
 
-enum class YuvRange {
-  Tv,
-  Pc,
+enum class AvifYCgCoRType {
+  Ro,
+  Re,
 };
 
 enum class YuvMatrix {
@@ -17,15 +17,15 @@ enum class YuvMatrix {
   YCgCo,
 };
 
+enum class YuvRange {
+  Tv,
+  Pc,
+};
+
 enum class YuvType {
   Yuv420,
   Yuv422,
   Yuv444,
-};
-
-enum class AvifYCgCoRType {
-  Ro,
-  Re,
 };
 
 extern "C" {
