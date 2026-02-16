@@ -15,7 +15,6 @@
 #import <vector>
 #import "AVIFImageXForm.h"
 #import <thread>
-#import <QuartzCore/QuartzCore.h>
 
 @implementation AVIFDataDecoder {
     avifDecoder *_idec;
@@ -209,8 +208,6 @@ void sharedDecoderDeallocator(avifDecoder* d) {
             return nil;
         }
         
-        CFTimeInterval start = CACurrentMediaTime();
-        
         // Static image
         avifResult nextImageResult = avifDecoderNextImage(decoder.get());
         if (nextImageResult != AVIF_RESULT_OK) {
@@ -240,14 +237,8 @@ void sharedDecoderDeallocator(avifDecoder* d) {
             }
         }
         
-        CFTimeInterval timeToFrame = CACurrentMediaTime() - start;
-
         auto xForm = [[AVIFImageXForm alloc] init];
         auto image = [xForm form:decoder.get() scale:scale];
-        
-        CFTimeInterval duration = CACurrentMediaTime() - start;
-        NSLog(@"AVIF420 time to frame: %f seconds", timeToFrame);
-        NSLog(@"AVIF420 time to full decode: %f seconds", duration);
 
         if (!image) {
             *error = [[NSError alloc] initWithDomain:@"AVIF" code:500 userInfo:@{ NSLocalizedDescriptionKey: @"Decoding AVIF has failed" }];
