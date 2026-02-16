@@ -155,7 +155,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
         }
         NSInteger result;
         int bufferLength = 30196;
-        uint8_t buffer[bufferLength];
+        uint8_t buffer[30196];
         NSMutableData* data = [[NSMutableData alloc] init];
         [inputStream open];
         while((result = [inputStream read:buffer maxLength:bufferLength]) != 0) {
@@ -207,6 +207,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
                                             userInfo:@{ NSLocalizedDescriptionKey: [NSString stringWithFormat:@"Decoding AVIF failed with: %s", avifResultToString(decodeResult)] }];
             return nil;
         }
+        
         // Static image
         avifResult nextImageResult = avifDecoderNextImage(decoder.get());
         if (nextImageResult != AVIF_RESULT_OK) {
@@ -235,7 +236,7 @@ void sharedDecoderDeallocator(avifDecoder* d) {
                 return nil;
             }
         }
-
+        
         auto xForm = [[AVIFImageXForm alloc] init];
         auto image = [xForm form:decoder.get() scale:scale];
 
